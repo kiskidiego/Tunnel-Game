@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3 uid="uid://cpftmf8co67m3"]
+
+[ext_resource type="Script" path="res://Scripts/PlayerController.cs" id="1_4pw76"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_o6fe4"]
+
+[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("camRotator")]
+floor_max_angle = 1.0472
+script = ExtResource("1_4pw76")
+camRotator = NodePath("Node3D")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_o6fe4")
+
+[node name="Node3D" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Node3D"]
+
+[node name="SpotLight3D" type="SpotLight3D" parent="Node3D/Camera3D"]
+light_energy = 3.0
+spot_range = 4096.0

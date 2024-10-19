@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3 uid="uid://bewv55l50ne4x"]
+
+[ext_resource type="PackedScene" uid="uid://cpftmf8co67m3" path="res://Scenes/Player.tscn" id="1_0n36k"]
+[ext_resource type="PackedScene" uid="uid://vnx8extkyqc5" path="res://Scenes/MapGenerator.tscn" id="2_4x106"]
+[ext_resource type="Script" path="res://Scripts/GameManager.cs" id="3_ylhoa"]
+
+[node name="MainScene" type="Node3D"]
+
+[node name="CharacterBody3D" parent="." instance=ExtResource("1_0n36k")]
+
+[node name="MapGenerator" parent="." instance=ExtResource("2_4x106")]
+worldWidth = 1000.0
+worldDepth = 1000.0
+worldHeight = 1000.0
+cubeSize = 2.0
+tunnelAmount = 1000
+curveSamples = 15
+surfaceValue = 3.0
+chunkRenderDistance = 30.0
+
+[node name="GameManager" type="Node" parent="." node_paths=PackedStringArray("player", "mapGenerator")]
+script = ExtResource("3_ylhoa")
+player = NodePath("../CharacterBody3D")
+mapGenerator = NodePath("../MapGenerator")
