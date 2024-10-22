@@ -42,27 +42,7 @@ public partial class MapGenerator : Node3D
 		public Vector3 endPoint;
 		public Vector3 controlPoint;
 	}
-	class CurvePoint
-	{
-		public Vector3 position;
-		public CurvePoint(Vector3 position)
-		{
-			this.position = position;
-		}
-	}
-	class Chunk
-	{
-		public bool loaded = false;
-		public bool rendered = false;
-		public Vector3I index;
-		public Vector3 worldPosition;
-		public List<CurvePoint> curvePoints = new List<CurvePoint>();
-		public Chunk(Vector3I index, Vector3 worldPosition)
-		{
-			this.index = index;
-			this.worldPosition = worldPosition;
-		}	
-	}
+
 	[Export] ulong seed = 0;
 	[Export] int worldSize = 100;
 	[Export] public int chunkSize { get; private set; } = 10;
@@ -74,10 +54,11 @@ public partial class MapGenerator : Node3D
 	[Export] float surfaceValue = 5;
 	[Export] int renderDistance = 5;
 	[Export] float branchiness = 0.5f;
-	List<Chunk> renderedChunks = new List<Chunk>();
+	List<Vector3I> renderedChunks = new List<Vector3I>();
 	float sqrSurfaceValue;
 	Vector3I lowestChunk;
-	Chunk[,,] chunkGrid;
+	List<Vector3>[,,] chunkCurvePoints;
+	bool[,,] loadedChunks;
 	MeshInstance3D[,,] chunkMeshes;
 	Random random;
 	float halfworldwidth;
@@ -98,18 +79,17 @@ public partial class MapGenerator : Node3D
 
 	void PrepareChunkGrid()
 	{
-		chunkGrid = new Chunk[worldSize, worldSize, worldSize];
+		chunkCurvePoints = new List<Vector3>[worldSize, worldSize, worldSize];
 		chunkMeshes = new MeshInstance3D[worldSize, worldSize, worldSize];
-		for (int i = 0; i < chunkGrid.GetLength(0); i++)
+		loadedChunks = new bool[worldSize, worldSize, worldSize];
+		for (int i = 0; i < chunkCurvePoints.GetLength(0); i++)
 		{
-			for (int j = 0; j < chunkGrid.GetLength(1); j++)
+			for (int j = 0; j < chunkCurvePoints.GetLength(1); j++)
 			{
-				for (int k = 0; k < chunkGrid.GetLength(2); k++)
+				for (int k = 0; k < chunkCurvePoints.GetLength(2); k++)
 				{
 					Vector3I chunkIndex = new Vector3I(i, j, k);
-					Vector3 chunkWorldPosition = IndexToChunk(chunkIndex);
-
-					chunkGrid[i, j, k] = new Chunk(chunkIndex, chunkWorldPosition);
+					chunkCurvePoints[i, j, k] = new List<Vector3>();
 				}
 			}
 		}
@@ -120,9 +100,9 @@ public partial class MapGenerator : Node3D
 		Vector3I chunkIndex = ChunkToIndex(worldPosition);
 		//GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
 
-		foreach(Chunk chunk in renderedChunks)
+		foreach(Vector3I chunk in renderedChunks)
 		{
-			Vector3I distanceVector = (chunk.index - chunkIndex).Abs();
+			Vector3I distanceVector = (chunk - chunkIndex).Abs();
 			if(distanceVector.X >= renderDistance || distanceVector.Y >= renderDistance || distanceVector.Z >= renderDistance)
 			{
 				UnloadChunk(chunk);
@@ -136,24 +116,25 @@ public partial class MapGenerator : Node3D
 				for(int z = -renderDistance; z <= renderDistance; z++)
 				{
 					Vector3I currentChunkIndex = chunkIndex + new Vector3I(x, y, z);
-					if (currentChunkIndex.X < 0 || currentChunkIndex.X >= chunkGrid.GetLength(0) || currentChunkIndex.Y < 0 || currentChunkIndex.Y >= chunkGrid.GetLength(1) || currentChunkIndex.Z < 0 || currentChunkIndex.Z >= chunkGrid.GetLength(2))
+					if (currentChunkIndex.X < 0 || currentChunkIndex.X >= worldSize || currentChunkIndex.Y < 0 || currentChunkIndex.Y >= worldSize || currentChunkIndex.Z < 0 || currentChunkIndex.Z >= worldSize)
 					{
 						continue;
 					}
-					if (chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].rendered)
+					MeshInstance3D meshInstance = chunkMeshes[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z];
+					if (meshInstance != null && chunkMeshes[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].Visible)
 					{
 						continue;
 					}
 					//GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
-					ProcessChunk(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
-					renderedChunks.Add(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
-					chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].rendered = true;
+					ProcessChunk(currentChunkIndex);
+					renderedChunks.Add(currentChunkIndex);
 				}
 			}
 		}
 		for(int i = 0; i < renderedChunks.Count; i++)
 		{
-			if (!renderedChunks[i].rendered)
+			MeshInstance3D meshInstance = chunkMeshes[renderedChunks[i].X, renderedChunks[i].Y, renderedChunks[i].Z];
+			if (meshInstance == null || !meshInstance.Visible)
 			{
 				renderedChunks.RemoveAt(i);
 				i--;
@@ -161,11 +142,10 @@ public partial class MapGenerator : Node3D
 		}
 	}
 
-	void UnloadChunk(Chunk chunk)
+	void UnloadChunk(Vector3I chunk)
 	{
-		chunk.rendered = false;
-		MeshInstance3D meshInstance = chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z];
-		if (meshInstance != null && !meshInstance.IsQueuedForDeletion())
+		MeshInstance3D meshInstance = chunkMeshes[chunk.X, chunk.Y, chunk.Z];
+		if (meshInstance != null)
 		{
 			meshInstance.ProcessMode = ProcessModeEnum.Disabled;
 			meshInstance.Visible = false;
@@ -175,10 +155,10 @@ public partial class MapGenerator : Node3D
 		}
 	}
 
-	void ProcessChunk(Chunk chunk)
+	void ProcessChunk(Vector3I chunk)
 	{
-		MeshInstance3D meshInstance = chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z];
-		if(chunk.loaded && meshInstance != null)
+		MeshInstance3D meshInstance = chunkMeshes[chunk.X, chunk.Y, chunk.Z];
+		if(meshInstance != null && loadedChunks[chunk.X, chunk.Y, chunk.Z])
 		{
 			meshInstance.ProcessMode = ProcessModeEnum.Inherit;
 			meshInstance.Visible = true;
@@ -186,15 +166,15 @@ public partial class MapGenerator : Node3D
 			chunkBody.SetPhysicsProcess(true);
 			chunkBody.GetNode<CollisionShape3D>("CollisionShape").Disabled = false;
 		}
-		else
+		else if (!loadedChunks[chunk.X, chunk.Y, chunk.Z])
 		{
 			GenerateChunk(chunk);
 		}
 	}
 
-	void GenerateChunk(Chunk chunk)
+	void GenerateChunk(Vector3I chunk)
 	{
-		chunk.loaded = true;
+		loadedChunks[chunk.X, chunk.Y, chunk.Z] = true;
 		Point[,,] grid = PrepareGrid(chunk);
 		////GD.Print("Grid prepared: " + grid.Length);
 		if (AssignScores(chunk, grid))
@@ -304,20 +284,21 @@ public partial class MapGenerator : Node3D
 				Vector3I chunk = ChunkToIndex(point);
 				////////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
 
-				if (chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints == null)
+				if (chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] == null)
 				{
-					chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints = new List<CurvePoint>();
+					chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] = new List<Vector3>();
 				}
-				chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints.Add(new CurvePoint(q0.Lerp(q1, t)));
+				chunkCurvePoints[chunk.X, chunk.Y, chunk.Z].Add(q0.Lerp(q1, t));
 			}
 		}
 		//////GD.Print("Curves sampled");
 	}
 
-	Point[,,] PrepareGrid(Chunk chunk)
+	Point[,,] PrepareGrid(Vector3I chunk)
 	{
 		////GD.Print("Prepare grid");
 		Point[,,] grid = new Point[chunkSize + 1, chunkSize + 1, chunkSize + 1];
+		Vector3 worldPosition = IndexToChunk(chunk);
 		////GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
 		for (int i = 0; i < grid.GetLength(0); i++)
 		{
@@ -325,7 +306,7 @@ public partial class MapGenerator : Node3D
 			{
 				for (int k = 0; k < grid.GetLength(2); k++)
 				{
-					grid[i, j, k] = new Point(new Vector3(chunk.worldPosition.X + i * cubeSize, chunk.worldPosition.Y + j * cubeSize, chunk.worldPosition.Z + k * cubeSize));
+					grid[i, j, k] = new Point(new Vector3(worldPosition.X + i * cubeSize, worldPosition.Y + j * cubeSize, worldPosition.Z + k * cubeSize));
 				}
 			}
 		}
@@ -333,7 +314,7 @@ public partial class MapGenerator : Node3D
 		return grid;
 	}
 	
-	bool AssignScores(Chunk chunk, Point[,,] grid)
+	bool AssignScores(Vector3I chunk, Point[,,] grid)
 	{
 		////GD.Print("Assign scores");
 		for (int i = 0; i < grid.GetLength(0); i++)
@@ -353,7 +334,7 @@ public partial class MapGenerator : Node3D
 		return true;
 	}
 
-	float AssessScore(Point point, Chunk chunk)
+	float AssessScore(Point point, Vector3I chunk)
 	{
 		float score = float.MaxValue;
 
@@ -366,17 +347,17 @@ public partial class MapGenerator : Node3D
 			{
 				for(int k = startIndex; k <= endIndex; k++)
 				{
-					if(chunk.index.X + i < 0 || chunk.index.X + i >= chunkGrid.GetLength(0) || chunk.index.Y + j < 0 || chunk.index.Y + j >= chunkGrid.GetLength(1) || chunk.index.Z + k < 0 || chunk.index.Z + k >= chunkGrid.GetLength(2))
+					if(chunk.X + i < 0 || chunk.X + i >= chunkCurvePoints.GetLength(0) || chunk.Y + j < 0 || chunk.Y + j >= chunkCurvePoints.GetLength(1) || chunk.Z + k < 0 || chunk.Z + k >= chunkCurvePoints.GetLength(2))
 					{
 						continue;
 					}
-					if (chunkGrid[chunk.index.X + i, chunk.index.Y + j, chunk.index.Z + k].curvePoints == null)
+					if (chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k] == null)
 					{
 						continue;
 					}
-					for (int l = 0; l < chunkGrid[chunk.index.X + i, chunk.index.Y + j, chunk.index.Z + k].curvePoints.Count; l++)
+					for (int l = 0; l < chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k].Count; l++)
 					{
-						float sqrDistance = (point.position - chunkGrid[chunk.index.X + i, chunk.index.Y + j, chunk.index.Z + k].curvePoints[l].position).LengthSquared();
+						float sqrDistance = (point.position - chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k][l]).LengthSquared();
 						if (sqrDistance < score)
 						{
 							score = sqrDistance;
@@ -398,7 +379,7 @@ public partial class MapGenerator : Node3D
 		return score;
 	}
 
-	void MarchingCubesAlgorithm(Chunk chunk, Point[,,] grid, float surfaceValue)
+	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue)
 	{
 		////GD.Print("Marching cubes algorithm");
 		List<Vector3> vertices = new List<Vector3>();
@@ -507,7 +488,7 @@ public partial class MapGenerator : Node3D
 			GenerateMesh(chunk, vertices, normals);
 	}
 
-	void GenerateMesh(Chunk chunk, List<Vector3> vertices, List<Vector3> normals)
+	void GenerateMesh(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals)
 	{
 		//GD.Print("Generate mesh: " + vertices.Count);
 		MeshInstance3D meshInstance = new MeshInstance3D();
@@ -520,7 +501,7 @@ public partial class MapGenerator : Node3D
 		//GD.Print(chunkBody.Name + " " + collisionShape.Name);
 		chunkBody.AddChild(collisionShape);
 		meshInstance.AddChild(chunkBody);
-		chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z] = meshInstance;
+		chunkMeshes[chunk.X, chunk.Y, chunk.Z] = meshInstance;
 		CallDeferred(Node.MethodName.AddChild, meshInstance);
 		//AddChild(meshInstance);
 		//meshInstance.Owner = this;
@@ -532,7 +513,7 @@ public partial class MapGenerator : Node3D
 		(meshInstance.Mesh as ArrayMesh).AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
 		collisionShape.Shape = meshInstance.Mesh.CreateTrimeshShape();
-		meshInstance.Name = "Chunk " + chunk.index;
+		meshInstance.Name = "Chunk " + chunk;
 	}
 
 	public Vector3I ChunkToIndex(Vector3 chunk)
