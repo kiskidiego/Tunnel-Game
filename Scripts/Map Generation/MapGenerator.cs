@@ -90,7 +90,7 @@ public partial class MapGenerator : Node3D
 		random = new Random(seed);
 		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
 		sqrSurfaceValue = surfaceValue * surfaceValue;
-		////GD.Print("Lowest chunk: " + lowestChunk);
+		//////GD.Print("Lowest chunk: " + lowestChunk);
 		PrepareChunkGrid();
 		SampleCurves(PrepareCurves());
 		DoChunkOperations(tunnelOrigin);
@@ -118,7 +118,7 @@ public partial class MapGenerator : Node3D
 	public void DoChunkOperations(Vector3 worldPosition)
 	{
 		Vector3I chunkIndex = ChunkToIndex(worldPosition);
-		GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
+		//GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
 
 		foreach(Chunk chunk in renderedChunks)
 		{
@@ -144,7 +144,7 @@ public partial class MapGenerator : Node3D
 					{
 						continue;
 					}
-					GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
+					//GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
 					ProcessChunk(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
 					renderedChunks.Add(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
 					chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].rendered = true;
@@ -196,10 +196,10 @@ public partial class MapGenerator : Node3D
 	{
 		chunk.loaded = true;
 		Point[,,] grid = PrepareGrid(chunk);
-		//GD.Print("Grid prepared: " + grid.Length);
+		////GD.Print("Grid prepared: " + grid.Length);
 		if (AssignScores(chunk, grid))
 		{
-			//GD.Print("if passed");
+			////GD.Print("if passed");
 			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue);
 		}
 	}
@@ -286,7 +286,7 @@ public partial class MapGenerator : Node3D
 			curves[i].controlPoint = new Vector3(x, y, z);
 			tunnelBranchPoints.Enqueue(curves[i].endPoint);
 		}
-		////GD.Print("Curves prepared");
+		//////GD.Print("Curves prepared");
 		return curves;
 	}
 
@@ -302,7 +302,7 @@ public partial class MapGenerator : Node3D
 				Vector3 q1 = curves[curve].controlPoint.Lerp(curves[curve].endPoint, t);
 				Vector3 point = q0.Lerp(q1, t);
 				Vector3I chunk = ChunkToIndex(point);
-				//////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
+				////////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
 
 				if (chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints == null)
 				{
@@ -311,14 +311,14 @@ public partial class MapGenerator : Node3D
 				chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints.Add(new CurvePoint(q0.Lerp(q1, t)));
 			}
 		}
-		////GD.Print("Curves sampled");
+		//////GD.Print("Curves sampled");
 	}
 
 	Point[,,] PrepareGrid(Chunk chunk)
 	{
-		//GD.Print("Prepare grid");
+		////GD.Print("Prepare grid");
 		Point[,,] grid = new Point[chunkSize + 1, chunkSize + 1, chunkSize + 1];
-		//GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
+		////GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
 		for (int i = 0; i < grid.GetLength(0); i++)
 		{
 			for (int j = 0; j < grid.GetLength(1); j++)
@@ -329,13 +329,13 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		//GD.Print("Grid prepared at chunk: " + chunk.index);
+		////GD.Print("Grid prepared at chunk: " + chunk.index);
 		return grid;
 	}
 	
 	bool AssignScores(Chunk chunk, Point[,,] grid)
 	{
-		//GD.Print("Assign scores");
+		////GD.Print("Assign scores");
 		for (int i = 0; i < grid.GetLength(0); i++)
 		{
 			for (int j = 0; j <	grid.GetLength(1); j++)
@@ -349,7 +349,7 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		//GD.Print("Scores assigned at chunk: " + chunk.index);
+		////GD.Print("Scores assigned at chunk: " + chunk.index);
 		return true;
 	}
 
@@ -387,20 +387,20 @@ public partial class MapGenerator : Node3D
 		}
 		if (score < sqrSurfaceValue)
 		{
-			//GD.Print("Inside");
+			////GD.Print("Inside");
 		}
 		if (score == float.MaxValue)
 		{
 			score = -1;
 		}
-		////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
+		//////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
 		point.score = score;
 		return score;
 	}
 
 	void MarchingCubesAlgorithm(Chunk chunk, Point[,,] grid, float surfaceValue)
 	{
-		//GD.Print("Marching cubes algorithm");
+		////GD.Print("Marching cubes algorithm");
 		List<Vector3> vertices = new List<Vector3>();
 		List<Vector3> normals = new List<Vector3>();
 
@@ -431,7 +431,7 @@ public partial class MapGenerator : Node3D
 					if (cubeIndex == 0 || cubeIndex == 255) 
 						continue;
 
-					////GD.Print("Cube index: " + cubeIndex);
+					//////GD.Print("Cube index: " + cubeIndex);
 					
 					if (vertices == null)
 					{
@@ -502,14 +502,14 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
+		//////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
 		if(vertices.Count > 0)
 			GenerateMesh(chunk, vertices, normals);
 	}
 
 	void GenerateMesh(Chunk chunk, List<Vector3> vertices, List<Vector3> normals)
 	{
-		GD.Print("Generate mesh: " + vertices.Count);
+		//GD.Print("Generate mesh: " + vertices.Count);
 		MeshInstance3D meshInstance = new MeshInstance3D();
 		meshInstance.Mesh = new ArrayMesh();
 		CollisionShape3D collisionShape = new CollisionShape3D();
@@ -517,7 +517,7 @@ public partial class MapGenerator : Node3D
 		StaticBody3D chunkBody = new StaticBody3D();
 		chunkBody.Name = "StaticBody";
 
-		GD.Print(chunkBody.Name + " " + collisionShape.Name);
+		//GD.Print(chunkBody.Name + " " + collisionShape.Name);
 		chunkBody.AddChild(collisionShape);
 		meshInstance.AddChild(chunkBody);
 		chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z] = meshInstance;
@@ -548,7 +548,7 @@ public partial class MapGenerator : Node3D
 	Vector3 VertexInterpolation(Vector3 p1, Vector3 p2, float v1, float v2)
 	{
 		//return p1 + (p2 - p1) * (surfaceValue - v1) / (v2 - v1);
-		////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
+		//////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
 		return p1.Lerp(p2, (sqrSurfaceValue - v1) / (v2 - v1));
 	}
 }
