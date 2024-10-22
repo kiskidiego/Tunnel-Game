@@ -1,23 +1,24 @@
 using Godot;
 using System;
 
+
 public partial class GameManager : Node
 {
-	[Export] PlayerController player;
+	[Export] Node3D player;
 	[Export] MapGenerator mapGenerator;
-	Vector3 playerPosition;
-	Vector3 chunkPosition;
+	Vector3I initialIndex;
+	Vector3I currentIndex;
 	public override void _EnterTree()
 	{
-		chunkPosition = player.Transform.Origin;
+		initialIndex = mapGenerator.ChunkToIndex(player.Transform.Origin);
 	}
 	public override void _Process(double delta)
 	{
-		if(chunkPosition.DistanceSquaredTo(player.Transform.Origin) > mapGenerator.chunkSize * mapGenerator.chunkSize)
+		currentIndex = mapGenerator.ChunkToIndex(player.Transform.Origin);
+		if(initialIndex != currentIndex)
 		{
-			GD.Print("Player position: ", player.Transform.Origin, " Chunk position: ", chunkPosition);
-			chunkPosition = player.Transform.Origin;
-			mapGenerator.DoChunkOperations(chunkPosition);
+			initialIndex = currentIndex;
+			mapGenerator.DoChunkOperations(player.Transform.Origin);
 		}
 	}
 }

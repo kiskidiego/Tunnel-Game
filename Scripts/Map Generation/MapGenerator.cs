@@ -2,16 +2,39 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Serialization;
 using Array = Godot.Collections.Array;
 
-public partial class MapGenerator : Node
+
+public partial class MapGenerator : Node3D
 {
+	partial class Random : RandomNumberGenerator
+	{
+		public Random() { }
+		public Random(ulong seed)
+		{
+			Seed = seed;
+		}
+		new public int RandiRange(int min, int max)
+		{
+			Seed++;
+			return base.RandiRange(min, max);
+		}
+		new public float RandfRange(float min, float max)
+		{
+			Seed++;
+			return base.RandfRange(min, max);
+		}
+	}
 	//TODO: Do something about already rendered chunks (they occupy memory)
 	class Point
 	{
 		public Vector3 position;
 		public float score = -1;
-		public short surfaceIndex = -1;
+		public Point(Vector3 position)
+		{
+			this.position = position;
+		}
 	}
 	class Curve
 	{
@@ -22,231 +45,212 @@ public partial class MapGenerator : Node
 	class CurvePoint
 	{
 		public Vector3 position;
-		public short surfaceIndex;
-		public CurvePoint(Vector3 position, short surfaceIndex = -1)
+		public CurvePoint(Vector3 position)
 		{
 			this.position = position;
-			this.surfaceIndex = surfaceIndex;
 		}
 	}
 	class Chunk
 	{
 		public bool loaded = false;
 		public bool rendered = false;
-		public Vector3I position;
 		public Vector3I index;
 		public Vector3 worldPosition;
-		public Point[,,] grid;
 		public List<CurvePoint> curvePoints = new List<CurvePoint>();
-		public Mesh mesh;
-		public MeshInstance3D meshInstance;
-		public CollisionShape3D collisionShape;
-		public Chunk aboveChunk;
-		public Chunk belowChunk;
-		public Chunk leftChunk;
-		public Chunk rightChunk;
-		public Chunk frontChunk;
-		public Chunk backChunk;
-		public Chunk(Vector3I position, Vector3I index, Vector3 worldPosition)
+		public Chunk(Vector3I index, Vector3 worldPosition)
 		{
-			this.position = position;
 			this.index = index;
 			this.worldPosition = worldPosition;
-		}
+		}	
 	}
-	[Export] float worldWidth = 100;
-	[Export] float worldDepth = 100;
-	[Export] float worldHeight = 100;
-	[Export] public float chunkSize { get; private set; } = 10;
+	[Export] ulong seed = 0;
+	[Export] int worldSize = 100;
+	[Export] public int chunkSize { get; private set; } = 10;
 	[Export] float cubeSize = 1;
 	[Export] Vector3 tunnelOrigin;
-	[Export] Vector3I initialChunk;
 	[Export] float tunnelRange = 10;
 	[Export] int tunnelAmount = 10;
 	[Export] int curveSamples = 10;
 	[Export] float surfaceValue = 5;
-	[Export] float chunkRenderDistance = 10;
+	[Export] int renderDistance = 5;
+	[Export] float branchiness = 0.5f;
 	List<Chunk> renderedChunks = new List<Chunk>();
 	float sqrSurfaceValue;
-	float squaredChunkRenderDistance;
-	int surfaceCount = 0;
 	Vector3I lowestChunk;
-	Vector3I currentChunk;
-	Curve[] curves;
 	Chunk[,,] chunkGrid;
-
+	MeshInstance3D[,,] chunkMeshes;
+	Random random;
+	float halfworldwidth;
 	public override void _Ready()
 	{
-		sqrSurfaceValue = surfaceValue * surfaceValue;
-		squaredChunkRenderDistance = chunkRenderDistance * chunkRenderDistance;
-		lowestChunk = new Vector3I((int)MathF.Ceiling(worldWidth / (2 * chunkSize)), (int)MathF.Ceiling(worldHeight / (2 * chunkSize)), (int)MathF.Ceiling(worldDepth / (2 * chunkSize)));
-		//GD.Print("Lowest chunk: " + lowestChunk);
-		currentChunk = initialChunk;
-		Vector3I topChunkIndex = GetChunkIndex(new Vector3(worldWidth / 2, worldHeight / 2, worldDepth / 2));
-		chunkGrid = new Chunk[topChunkIndex.X + 1, topChunkIndex.Y + 1, topChunkIndex.Z + 1];
-		for(int i = 0; i < chunkGrid.GetLength(0); i++)
+		if(seed == 0)
 		{
-			for(int j = 0; j < chunkGrid.GetLength(1); j++)
+			seed = (ulong)DateTime.Now.Ticks;
+		}
+		random = new Random(seed);
+		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
+		sqrSurfaceValue = surfaceValue * surfaceValue;
+		////GD.Print("Lowest chunk: " + lowestChunk);
+		PrepareChunkGrid();
+		SampleCurves(PrepareCurves());
+		DoChunkOperations(tunnelOrigin);
+	}
+
+	void PrepareChunkGrid()
+	{
+		chunkGrid = new Chunk[worldSize, worldSize, worldSize];
+		chunkMeshes = new MeshInstance3D[worldSize, worldSize, worldSize];
+		for (int i = 0; i < chunkGrid.GetLength(0); i++)
+		{
+			for (int j = 0; j < chunkGrid.GetLength(1); j++)
 			{
-				for(int k = 0; k < chunkGrid.GetLength(2); k++)
+				for (int k = 0; k < chunkGrid.GetLength(2); k++)
 				{
 					Vector3I chunkIndex = new Vector3I(i, j, k);
-					Vector3I chunkPosition = IndexToChunk(chunkIndex);
-					Vector3 chunkWorldPosition = new Vector3(chunkPosition.X * chunkSize + chunkSize / 2, chunkPosition.Y * chunkSize + chunkSize / 2, chunkPosition.Z * chunkSize + chunkSize / 2);
+					Vector3 chunkWorldPosition = IndexToChunk(chunkIndex);
 
-					chunkGrid[i, j, k] = new Chunk(chunkPosition, chunkIndex, chunkWorldPosition);
-
-					if (i > 0)
-					{
-						chunkGrid[i, j, k].leftChunk = chunkGrid[i - 1, j, k];
-						chunkGrid[i - 1, j, k].rightChunk = chunkGrid[i, j, k];
-					}
-					if (j > 0)
-					{
-						chunkGrid[i, j, k].belowChunk = chunkGrid[i, j - 1, k];
-						chunkGrid[i, j - 1, k].aboveChunk = chunkGrid[i, j, k];
-					}
-					if (k > 0)
-					{
-						chunkGrid[i, j, k].backChunk = chunkGrid[i, j, k - 1];
-						chunkGrid[i, j, k - 1].frontChunk = chunkGrid[i, j, k];
-					}
+					chunkGrid[i, j, k] = new Chunk(chunkIndex, chunkWorldPosition);
 				}
 			}
 		}
-		////GD.Print("Top chunk index: " + topChunkIndex);
-		PrepareCurves();
-		SampleCurves();
-		
-		DoChunkOperations(tunnelOrigin);
 	}
 
 	public void DoChunkOperations(Vector3 worldPosition)
 	{
-		GD.Print("Do chunk operations");
-		if (renderedChunks.Count == 0)
+		Vector3I chunkIndex = ChunkToIndex(worldPosition);
+		GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
+
+		foreach(Chunk chunk in renderedChunks)
 		{
-			Vector3I chunkIndex = GetChunkIndex(worldPosition);
-			ProcessChunk(chunkGrid[chunkIndex.X, chunkIndex.Y, chunkIndex.Z]);
-			renderedChunks.Add(chunkGrid[chunkIndex.X, chunkIndex.Y, chunkIndex.Z]);
-			chunkGrid[chunkIndex.X, chunkIndex.Y, chunkIndex.Z].rendered = true;
-		}
-		for (int i = 0; i < renderedChunks.Count; i++)
-		{
-			float sqrDistance = renderedChunks[i].worldPosition.DistanceSquaredTo(worldPosition);
-			if (sqrDistance > squaredChunkRenderDistance && renderedChunks[i].rendered)
+			Vector3I distanceVector = (chunk.index - chunkIndex).Abs();
+			if(distanceVector.X >= renderDistance || distanceVector.Y >= renderDistance || distanceVector.Z >= renderDistance)
 			{
-				renderedChunks[i].rendered = false;
+				UnloadChunk(chunk);
+			}
+		}
+
+		for(int x = -renderDistance; x <= renderDistance; x++)
+		{
+			for(int y = -renderDistance; y <= renderDistance; y++)
+			{
+				for(int z = -renderDistance; z <= renderDistance; z++)
+				{
+					Vector3I currentChunkIndex = chunkIndex + new Vector3I(x, y, z);
+					if (currentChunkIndex.X < 0 || currentChunkIndex.X >= chunkGrid.GetLength(0) || currentChunkIndex.Y < 0 || currentChunkIndex.Y >= chunkGrid.GetLength(1) || currentChunkIndex.Z < 0 || currentChunkIndex.Z >= chunkGrid.GetLength(2))
+					{
+						continue;
+					}
+					if (chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].rendered)
+					{
+						continue;
+					}
+					GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
+					ProcessChunk(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
+					renderedChunks.Add(chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z]);
+					chunkGrid[currentChunkIndex.X, currentChunkIndex.Y, currentChunkIndex.Z].rendered = true;
+				}
+			}
+		}
+		for(int i = 0; i < renderedChunks.Count; i++)
+		{
+			if (!renderedChunks[i].rendered)
+			{
 				renderedChunks.RemoveAt(i);
 				i--;
-				continue;
 			}
-			for (int j = 0; j < 6; j++)
-			{
-				Chunk chunk = null;
-				switch (j)
-				{
-					case 0:
-						chunk = renderedChunks[i].aboveChunk;
-						break;
-					case 1:
-						chunk = renderedChunks[i].belowChunk;
-						break;
-					case 2:
-						chunk = renderedChunks[i].leftChunk;
-						break;
-					case 3:
-						chunk = renderedChunks[i].rightChunk;
-						break;
-					case 4:
-						chunk = renderedChunks[i].frontChunk;
-						break;
-					case 5:
-						chunk = renderedChunks[i].backChunk;
-						break;
-				}
-				if (chunk == null)
-				{
-					continue;
-				}
-				if(!chunk.rendered)
-				{
-					renderedChunks.Add(chunk);
-					chunk.rendered = true;
-				}
+		}
+	}
 
-				ProcessChunk(chunk);
-			}
+	void UnloadChunk(Chunk chunk)
+	{
+		chunk.rendered = false;
+		MeshInstance3D meshInstance = chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z];
+		if (meshInstance != null && !meshInstance.IsQueuedForDeletion())
+		{
+			meshInstance.ProcessMode = ProcessModeEnum.Disabled;
+			meshInstance.Visible = false;
+			StaticBody3D chunkBody = meshInstance.GetNode<StaticBody3D>("StaticBody");
+			chunkBody.SetPhysicsProcess(false);
+			chunkBody.GetNode<CollisionShape3D>("CollisionShape").Disabled = true;
 		}
 	}
 
 	void ProcessChunk(Chunk chunk)
 	{
-		if(chunk.loaded)
+		MeshInstance3D meshInstance = chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z];
+		if(chunk.loaded && meshInstance != null)
 		{
-			return;
+			meshInstance.ProcessMode = ProcessModeEnum.Inherit;
+			meshInstance.Visible = true;
+			StaticBody3D chunkBody = meshInstance.GetNode<StaticBody3D>("StaticBody");
+			chunkBody.SetPhysicsProcess(true);
+			chunkBody.GetNode<CollisionShape3D>("CollisionShape").Disabled = false;
 		}
-		chunk.meshInstance = new MeshInstance3D();
-		AddChild(chunk.meshInstance);
-		chunk.meshInstance.Mesh = new ArrayMesh();
-		chunk.collisionShape = new CollisionShape3D();
-		StaticBody3D chunkBody = new StaticBody3D();
-		chunkBody.AddChild(chunk.collisionShape);
-		chunk.meshInstance.AddChild(chunkBody);
-		bool renderChunk;
-		PrepareGrid(chunk);
-		GD.Print("Grid prepared at chunk: " + chunk.position);
-		renderChunk = AssignScores(chunk);
-		GD.Print("Scores assigned at chunk: " + chunk.position);
-		chunk.loaded = true;
-		if (renderChunk)
+		else
 		{
-			MarchingCubesAlgorithm(chunk, sqrSurfaceValue);
-			GD.Print("Marching cubes algorithm executed at chunk: " + chunk.position);
+			GenerateChunk(chunk);
 		}
-		chunk.grid = null;
 	}
 
-	void PrepareCurves()
+	void GenerateChunk(Chunk chunk)
 	{
+		chunk.loaded = true;
+		Point[,,] grid = PrepareGrid(chunk);
+		//GD.Print("Grid prepared: " + grid.Length);
+		if (AssignScores(chunk, grid))
+		{
+			//GD.Print("if passed");
+			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue);
+		}
+	}
+
+	Curve[] PrepareCurves()
+	{
+		float worldWidth = worldSize * chunkSize * cubeSize;
 		Queue<Vector3> tunnelBranchPoints = new Queue<Vector3>();
-		curves = new Curve[tunnelAmount];
+		Curve[] curves = new Curve[tunnelAmount];
 		curves[0] = new Curve();
 		curves[0].startPoint = tunnelOrigin;
+
 		float x;
 		do
 		{
-			x = (float)GD.RandRange(-tunnelRange, tunnelRange);
+			x = random.RandfRange(-tunnelRange, tunnelRange);
 		} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		float y;
 		do
 		{
-			y = (float)GD.RandRange(-tunnelRange, tunnelRange/4);
-		} while (y > worldHeight / 2 - 2 * sqrSurfaceValue || y < -worldHeight / 2 + 2 * sqrSurfaceValue);
+			y = random.RandfRange(-tunnelRange, tunnelRange/4);
+		} while (y > worldWidth / 2 - 2 * sqrSurfaceValue || y < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		float z;
 		do
 		{
-			z = (float)GD.RandRange(-tunnelRange, tunnelRange);
-		} while (z > worldDepth / 2 - 2 * sqrSurfaceValue || z < -worldDepth / 2 + 2 * sqrSurfaceValue);
+			z = random.RandfRange(-tunnelRange, tunnelRange);
+		} while (z > worldWidth / 2 - 2 * sqrSurfaceValue || z < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		curves[0].endPoint = new Vector3(x, y, z);
+
+
 		Vector3 midpoint = (curves[0].startPoint + curves[0].endPoint) / 2;
 		do
 		{
-			x = (float)GD.RandRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
+			x = random.RandfRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
 		} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		do
 		{
-			y = (float)GD.RandRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);
-		} while (y > worldHeight / 2 - 2 * sqrSurfaceValue || y < -worldHeight / 2 + 2 * sqrSurfaceValue);
+			y = random.RandfRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);
+		} while (y > worldWidth / 2 - 2 * sqrSurfaceValue || y < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		do
 		{
-			z = (float)GD.RandRange(-tunnelRange + midpoint.Z, tunnelRange + midpoint.Z);
-		} while (z > worldDepth / 2 - 2 * sqrSurfaceValue || z < -worldDepth / 2 + 2 * sqrSurfaceValue);
+			z = random.RandfRange(-tunnelRange + midpoint.Z, tunnelRange + midpoint.Z);
+		} while (z > worldWidth / 2 - 2 * sqrSurfaceValue || z < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		curves[0].controlPoint = new Vector3(x, y, z);
+
 		tunnelBranchPoints.Enqueue(curves[0].endPoint);
+
+
 		for (int i = 1; i < curves.Length; i++)
 		{
-			while (GD.RandRange(0, 1) == 0)
+			while (random.RandfRange(0, 1) > branchiness)
 			{
 				Vector3 branchPoint = tunnelBranchPoints.Dequeue();
 				tunnelBranchPoints.Enqueue(branchPoint);
@@ -255,37 +259,38 @@ public partial class MapGenerator : Node
 			curves[i].startPoint = tunnelBranchPoints.Dequeue();
 			do
 			{
-				x = (float)GD.RandRange(-tunnelRange + curves[i].startPoint.X, tunnelRange + curves[i].startPoint.X);
+				x = random.RandfRange(-tunnelRange + curves[i].startPoint.X, tunnelRange + curves[i].startPoint.X);
 			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
-				y = (float)GD.RandRange(-tunnelRange + curves[i].startPoint.Y, tunnelRange + curves[i].startPoint.Y);
-			} while (y > worldHeight / 2 - 2 * sqrSurfaceValue || y < -worldHeight / 2 + 2 * sqrSurfaceValue);
+				y = random.RandfRange(-tunnelRange + curves[i].startPoint.Y, tunnelRange + curves[i].startPoint.Y);
+			} while (y > worldWidth / 2 - 2 * sqrSurfaceValue || y < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
-				z = (float)GD.RandRange(-tunnelRange + curves[i].startPoint.Z, tunnelRange + curves[i].startPoint.Z);
-			} while (z > worldDepth / 2 - 2 * sqrSurfaceValue || z < -worldDepth / 2 + 2 * sqrSurfaceValue);
+				z = random.RandfRange(-tunnelRange + curves[i].startPoint.Z, tunnelRange + curves[i].startPoint.Z);
+			} while (z > worldWidth / 2 - 2 * sqrSurfaceValue || z < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			curves[i].endPoint = new Vector3(x, y, z);
 			midpoint = (curves[i].startPoint + curves[i].endPoint) / 2;
 			do
 			{
-				x = (float)GD.RandRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
+				x = random.RandfRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
 			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
-				y = (float)GD.RandRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);
-			} while (y > worldHeight / 2 - 2 * sqrSurfaceValue || y < -worldHeight / 2 + 2 * sqrSurfaceValue);
+				y = random.RandfRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);
+			} while (y > worldWidth / 2 - 2 * sqrSurfaceValue || y < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
-				z = (float)GD.RandRange(-tunnelRange + midpoint.Z, tunnelRange + midpoint.Z);
-			} while (z > worldDepth / 2 - 2 * sqrSurfaceValue || z < -worldDepth / 2 + 2 * sqrSurfaceValue);
+				z = random.RandfRange(-tunnelRange + midpoint.Z, tunnelRange + midpoint.Z);
+			} while (z > worldWidth / 2 - 2 * sqrSurfaceValue || z < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			curves[i].controlPoint = new Vector3(x, y, z);
 			tunnelBranchPoints.Enqueue(curves[i].endPoint);
 		}
-		//GD.Print("Curves prepared");
+		////GD.Print("Curves prepared");
+		return curves;
 	}
 
-	void SampleCurves()
+	void SampleCurves(Curve[] curves)
 	{
 		for (int curve = 0; curve < tunnelAmount; curve++)
 		{
@@ -296,163 +301,63 @@ public partial class MapGenerator : Node
 				Vector3 q0 = curves[curve].startPoint.Lerp(curves[curve].controlPoint, t);
 				Vector3 q1 = curves[curve].controlPoint.Lerp(curves[curve].endPoint, t);
 				Vector3 point = q0.Lerp(q1, t);
-				Vector3I chunk = GetChunkIndex(point);
-				////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
+				Vector3I chunk = ChunkToIndex(point);
+				//////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
 
 				if (chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints == null)
 				{
 					chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints = new List<CurvePoint>();
 				}
-				chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints.Add(new CurvePoint(q0.Lerp(q1, t), i));
-
-				if (i == surfaceCount)
-				{
-					surfaceCount++;
-				}
+				chunkGrid[chunk.X, chunk.Y, chunk.Z].curvePoints.Add(new CurvePoint(q0.Lerp(q1, t)));
 			}
 		}
-		//GD.Print("Curves sampled");
+		////GD.Print("Curves sampled");
 	}
 
-	void PrepareGrid(Chunk chunk)
+	Point[,,] PrepareGrid(Chunk chunk)
 	{
-		chunk.grid = new Point[(int)(chunkSize / cubeSize) + 1, (int)(chunkSize / cubeSize) + 1, (int)(chunkSize / cubeSize) + 1];
-
-		int startIndex1 = 0;
-		int startIndex2 = 0;
-		int startIndex3 = 0;
-		int endIndex1 = chunk.grid.GetLength(0);
-		int endIndex2 = chunk.grid.GetLength(1);
-		int endIndex3 = chunk.grid.GetLength(2);
-
-		float leftLimit = chunk.position.X * chunkSize;
-		float bottomLimit = chunk.position.Y * chunkSize;
-		float backLimit = chunk.position.Z * chunkSize;
-
-		float xStep = leftLimit;
-		float yStep = bottomLimit;
-		float zStep = backLimit;
-
-		if(chunk.leftChunk.grid != null)
+		//GD.Print("Prepare grid");
+		Point[,,] grid = new Point[chunkSize + 1, chunkSize + 1, chunkSize + 1];
+		//GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
+		for (int i = 0; i < grid.GetLength(0); i++)
 		{
-			startIndex1 = 1;
-			for(int i = 0; i < chunk.grid.GetLength(1); i++)
+			for (int j = 0; j < grid.GetLength(1); j++)
 			{
-				for(int j = 0; j < chunk.grid.GetLength(2); j++)
+				for (int k = 0; k < grid.GetLength(2); k++)
 				{
-					chunk.grid[0, i, j] = chunk.leftChunk.grid[chunk.leftChunk.grid.GetLength(0) - 1, i, j];
+					grid[i, j, k] = new Point(new Vector3(chunk.worldPosition.X + i * cubeSize, chunk.worldPosition.Y + j * cubeSize, chunk.worldPosition.Z + k * cubeSize));
 				}
 			}
 		}
-
-		if(chunk.belowChunk.grid != null)
-		{
-			startIndex2 = 1;
-			for(int i = 0; i < chunk.grid.GetLength(0); i++)
-			{
-				for(int j = 0; j < chunk.grid.GetLength(2); j++)
-				{
-					chunk.grid[i, 0, j] = chunk.belowChunk.grid[i, chunk.belowChunk.grid.GetLength(1) - 1, j];
-				}
-			}
-		}
-
-		if(chunk.backChunk.grid != null)
-		{
-			startIndex3 = 1;
-			for(int i = 0; i < chunk.grid.GetLength(0); i++)
-			{
-				for(int j = 0; j < chunk.grid.GetLength(1); j++)
-				{
-					chunk.grid[i, j, 0] = chunk.backChunk.grid[i, j, chunk.backChunk.grid.GetLength(2) - 1];
-				}
-			}
-		}
-
-		if(chunk.rightChunk.grid != null)
-		{
-			endIndex1 = chunk.grid.GetLength(0) - 1;
-			for(int i = 0; i < chunk.grid.GetLength(1); i++)
-			{
-				for(int j = 0; j < chunk.grid.GetLength(2); j++)
-				{
-					chunk.grid[chunk.grid.GetLength(0) - 1, i, j] = chunk.rightChunk.grid[0, i, j];
-				}
-			}
-		}
-
-		if(chunk.aboveChunk.grid != null)
-		{
-			endIndex2 = chunk.grid.GetLength(1) - 1;
-			for(int i = 0; i < chunk.grid.GetLength(0); i++)
-			{
-				for(int j = 0; j < chunk.grid.GetLength(2); j++)
-				{
-					chunk.grid[i, chunk.grid.GetLength(1) - 1, j] = chunk.aboveChunk.grid[i, 0, j];
-				}
-			}
-		}
-
-		if(chunk.frontChunk.grid != null)
-		{
-			endIndex3 = chunk.grid.GetLength(2) - 1;
-			for(int i = 0; i < chunk.grid.GetLength(0); i++)
-			{
-				for(int j = 0; j < chunk.grid.GetLength(1); j++)
-				{
-					chunk.grid[i, j, chunk.grid.GetLength(2) - 1] = chunk.frontChunk.grid[i, j, 0];
-				}
-			}
-		}
-
-		for (int i = startIndex1; i < endIndex1; i++)
-		{
-			for (int j = startIndex2; j < endIndex2; j++)
-			{
-				for (int k = startIndex3; k < endIndex3; k++)
-				{
-					chunk.grid[i, j, k] = new Point();
-					chunk.grid[i, j, k].position = new Vector3(xStep, yStep, zStep);
-					zStep += cubeSize;
-				}
-				zStep = backLimit;
-				yStep += cubeSize;
-			}
-			yStep = bottomLimit;
-			xStep += cubeSize;
-		}
-		//GD.Print("Grid prepared at chunk: " + chunk);
+		//GD.Print("Grid prepared at chunk: " + chunk.index);
+		return grid;
 	}
 	
-	bool AssignScores(Chunk chunk)
+	bool AssignScores(Chunk chunk, Point[,,] grid)
 	{
-		////GD.Print("StartX: " + startX + " StartY: " + startY + " StartZ: " + startZ + " EndX: " + endX + " EndY: " + endY + " EndZ: " + endZ);
-		for (int i = 0; i < chunk.grid.GetLength(0); i++)
+		//GD.Print("Assign scores");
+		for (int i = 0; i < grid.GetLength(0); i++)
 		{
-			for (int j = 0; j < chunk.grid.GetLength(1); j++)
+			for (int j = 0; j <	grid.GetLength(1); j++)
 			{
-				for (int k = 0; k < chunk.grid.GetLength(2); k++)
+				for (int k = 0; k < grid.GetLength(2); k++)
 				{
-					if (chunk.grid[i, j, k].score != -1)
-					{
-						continue;
-					}
-					if (AssessScore(chunk.grid[i, j, k], chunk) == -1)
+					if (AssessScore(grid[i, j, k], chunk) == -1)
 					{
 						return false;
 					}
 				}
 			}
 		}
+		//GD.Print("Scores assigned at chunk: " + chunk.index);
 		return true;
 	}
 
 	float AssessScore(Point point, Chunk chunk)
 	{
 		float score = float.MaxValue;
-		short surfaceIndex = -1;
 
-		int startIndex = -Mathf.CeilToInt(surfaceValue / chunkSize + 1);
+		int startIndex = -Mathf.CeilToInt(surfaceValue / (chunkSize * cubeSize) + 1);
 		int endIndex = -startIndex;
 
 		for (int i = startIndex; i <= endIndex; i++)
@@ -475,208 +380,175 @@ public partial class MapGenerator : Node
 						if (sqrDistance < score)
 						{
 							score = sqrDistance;
-							surfaceIndex = chunkGrid[chunk.index.X + i, chunk.index.Y + j, chunk.index.Z + k].curvePoints[l].surfaceIndex;
 						}
 					}
 				}
 			}
 		}
-		if(score == float.MaxValue)
+		if (score < sqrSurfaceValue)
+		{
+			//GD.Print("Inside");
+		}
+		if (score == float.MaxValue)
 		{
 			score = -1;
 		}
-		//GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
+		////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
 		point.score = score;
-		point.surfaceIndex = surfaceIndex;
 		return score;
 	}
 
-	void MarchingCubesAlgorithm(Chunk chunk, float surfaceValue)
+	void MarchingCubesAlgorithm(Chunk chunk, Point[,,] grid, float surfaceValue)
 	{
-		List<Vector3>[] vertices = new List<Vector3>[surfaceCount];
-		List<Vector3>[] normals = new List<Vector3>[surfaceCount];
+		//GD.Print("Marching cubes algorithm");
+		List<Vector3> vertices = new List<Vector3>();
+		List<Vector3> normals = new List<Vector3>();
 
-		for (int i = 0; i < chunk.grid.GetLength(0) - 1; i++)
+		for (int i = 0; i < grid.GetLength(0) - 1; i++)
 		{
-			for (int j = 0; j < chunk.grid.GetLength(1) - 1; j++)
+			for (int j = 0; j < grid.GetLength(1) - 1; j++)
 			{
-				for (int k = 0; k < chunk.grid.GetLength(2) - 1; k++)
+				for (int k = 0; k < grid.GetLength(2) - 1; k++)
 				{
 					byte cubeIndex = 0;
-					if (chunk.grid[i, j, k].score < surfaceValue) 
+					if (grid[i, j, k].score < surfaceValue) 
 						cubeIndex |= 1;
-					if (chunk.grid[i + 1, j, k].score < surfaceValue) 
+					if (grid[i + 1, j, k].score < surfaceValue) 
 						cubeIndex |= 2;
-					if (chunk.grid[i + 1, j, k + 1].score < surfaceValue) 
+					if (grid[i + 1, j, k + 1].score < surfaceValue) 
 						cubeIndex |= 4;
-					if (chunk.grid[i, j, k + 1].score < surfaceValue) 
+					if (grid[i, j, k + 1].score < surfaceValue) 
 						cubeIndex |= 8;
-					if (chunk.grid[i, j + 1, k].score < surfaceValue) 
+					if (grid[i, j + 1, k].score < surfaceValue) 
 						cubeIndex |= 16;
-					if (chunk.grid[i + 1, j + 1, k].score < surfaceValue) 
+					if (grid[i + 1, j + 1, k].score < surfaceValue) 
 						cubeIndex |= 32;
-					if (chunk.grid[i + 1, j + 1, k + 1].score < surfaceValue) 
+					if (grid[i + 1, j + 1, k + 1].score < surfaceValue) 
 						cubeIndex |= 64;
-					if (chunk.grid[i, j + 1, k + 1].score < surfaceValue) 
+					if (grid[i, j + 1, k + 1].score < surfaceValue) 
 						cubeIndex |= 128;
 
 					if (cubeIndex == 0 || cubeIndex == 255) 
 						continue;
 
-					//GD.Print("Cube index: " + cubeIndex);
+					////GD.Print("Cube index: " + cubeIndex);
 					
-					int surfaceIndex = chunk.grid[i, j, k].surfaceIndex;
-
-					if (vertices[surfaceIndex] == null)
+					if (vertices == null)
 					{
-						vertices[surfaceIndex] = new List<Vector3>();
-						normals[surfaceIndex] = new List<Vector3>();
+						vertices = new List<Vector3>();
+						normals = new List<Vector3>();
 					}
 
 					Vector3[] edgeVertices = new Vector3[12];
 					if ((MarchTables.edges[cubeIndex] & 1) == 1)
 					{
-						edgeVertices[0] = VertexInterpolation(chunk.grid[i, j, k].position, chunk.grid[i + 1, j, k].position, chunk.grid[i, j, k].score, chunk.grid[i + 1, j, k].score);
+						edgeVertices[0] = VertexInterpolation(grid[i, j, k].position, grid[i + 1, j, k].position, grid[i, j, k].score, grid[i + 1, j, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 2) == 2)
 					{
-						edgeVertices[1] = VertexInterpolation(chunk.grid[i + 1, j, k].position, chunk.grid[i + 1, j, k + 1].position, chunk.grid[i + 1, j, k].score, chunk.grid[i + 1, j, k + 1].score);
+						edgeVertices[1] = VertexInterpolation(grid[i + 1, j, k].position, grid[i + 1, j, k + 1].position, grid[i + 1, j, k].score, grid[i + 1, j, k + 1].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 4) == 4)
 					{
-						edgeVertices[2] = VertexInterpolation(chunk.grid[i + 1, j, k + 1].position, chunk.grid[i , j, k + 1].position, chunk.grid[i + 1, j, k + 1].score, chunk.grid[i, j, k + 1].score);
+						edgeVertices[2] = VertexInterpolation(grid[i + 1, j, k + 1].position, grid[i , j, k + 1].position, grid[i + 1, j, k + 1].score, grid[i, j, k + 1].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 8) == 8)
 					{
-						edgeVertices[3] = VertexInterpolation(chunk.grid[i, j, k + 1].position, chunk.grid[i, j, k].position, chunk.grid[i, j, k + 1].score, chunk.grid[i, j, k].score);
+						edgeVertices[3] = VertexInterpolation(grid[i, j, k + 1].position, grid[i, j, k].position, grid[i, j, k + 1].score, grid[i, j, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 16) == 16)
 					{
-						edgeVertices[4] = VertexInterpolation(chunk.grid[i, j + 1, k].position, chunk.grid[i + 1, j + 1, k].position, chunk.grid[i, j + 1, k].score, chunk.grid[i + 1, j + 1, k].score);
+						edgeVertices[4] = VertexInterpolation(grid[i, j + 1, k].position, grid[i + 1, j + 1, k].position, grid[i, j + 1, k].score, grid[i + 1, j + 1, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 32) == 32)
 					{
-						edgeVertices[5] = VertexInterpolation(chunk.grid[i + 1, j + 1, k].position, chunk.grid[i + 1, j + 1, k + 1].position, chunk.grid[i + 1, j + 1, k].score, chunk.grid[i + 1, j + 1, k + 1].score);
+						edgeVertices[5] = VertexInterpolation(grid[i + 1, j + 1, k].position, grid[i + 1, j + 1, k + 1].position, grid[i + 1, j + 1, k].score, grid[i + 1, j + 1, k + 1].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 64) == 64)
 					{
-						edgeVertices[6] = VertexInterpolation(chunk.grid[i + 1, j + 1, k + 1].position, chunk.grid[i, j + 1, k + 1].position, chunk.grid[i + 1, j + 1, k + 1].score, chunk.grid[i, j + 1, k + 1].score);
+						edgeVertices[6] = VertexInterpolation(grid[i + 1, j + 1, k + 1].position, grid[i, j + 1, k + 1].position, grid[i + 1, j + 1, k + 1].score, grid[i, j + 1, k + 1].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 128) == 128)
 					{
-						edgeVertices[7] = VertexInterpolation(chunk.grid[i, j + 1, k + 1].position, chunk.grid[i, j + 1, k].position, chunk.grid[i, j + 1, k + 1].score, chunk.grid[i, j + 1, k].score);
+						edgeVertices[7] = VertexInterpolation(grid[i, j + 1, k + 1].position, grid[i, j + 1, k].position, grid[i, j + 1, k + 1].score, grid[i, j + 1, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 256) == 256)
 					{
-						edgeVertices[8] = VertexInterpolation(chunk.grid[i, j, k].position, chunk.grid[i, j + 1, k].position, chunk.grid[i, j, k].score, chunk.grid[i, j + 1, k].score);
+						edgeVertices[8] = VertexInterpolation(grid[i, j, k].position, grid[i, j + 1, k].position, grid[i, j, k].score, grid[i, j + 1, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 512) == 512)
 					{
-						edgeVertices[9] = VertexInterpolation(chunk.grid[i + 1, j, k].position, chunk.grid[i + 1, j + 1, k].position, chunk.grid[i + 1, j, k].score, chunk.grid[i + 1, j + 1, k].score);
+						edgeVertices[9] = VertexInterpolation(grid[i + 1, j, k].position, grid[i + 1, j + 1, k].position, grid[i + 1, j, k].score, grid[i + 1, j + 1, k].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 1024) == 1024)
 					{
-						edgeVertices[10] = VertexInterpolation(chunk.grid[i + 1, j, k + 1].position, chunk.grid[i + 1, j + 1, k + 1].position, chunk.grid[i + 1, j, k + 1].score, chunk.grid[i + 1, j + 1, k + 1].score);
+						edgeVertices[10] = VertexInterpolation(grid[i + 1, j, k + 1].position, grid[i + 1, j + 1, k + 1].position, grid[i + 1, j, k + 1].score, grid[i + 1, j + 1, k + 1].score);
 					}
 					if ((MarchTables.edges[cubeIndex] & 2048) == 2048)
 					{
-						edgeVertices[11] = VertexInterpolation(chunk.grid[i, j, k + 1].position, chunk.grid[i, j + 1, k + 1].position, chunk.grid[i, j, k + 1].score, chunk.grid[i, j + 1, k + 1].score);
+						edgeVertices[11] = VertexInterpolation(grid[i, j, k + 1].position, grid[i, j + 1, k + 1].position, grid[i, j, k + 1].score, grid[i, j + 1, k + 1].score);
 					}
 					
 					for (int l = 0; MarchTables.triangles[cubeIndex, l] != -1; l += 3)
 					{
-						vertices[surfaceIndex].Add(edgeVertices[MarchTables.triangles[cubeIndex, l]]);
-						vertices[surfaceIndex].Add(edgeVertices[MarchTables.triangles[cubeIndex, l + 1]]);
-						vertices[surfaceIndex].Add(edgeVertices[MarchTables.triangles[cubeIndex, l + 2]]);
-						Vector3 normal = (vertices[surfaceIndex][vertices[surfaceIndex].Count - 3] - vertices[surfaceIndex][vertices[surfaceIndex].Count - 2]).Cross(vertices[surfaceIndex][vertices[surfaceIndex].Count - 1] - vertices[surfaceIndex][vertices[surfaceIndex].Count - 2]).Normalized();
-						normals[surfaceIndex].Add(normal);
-						normals[surfaceIndex].Add(normal);
-						normals[surfaceIndex].Add(normal);
+						vertices.Add(edgeVertices[MarchTables.triangles[cubeIndex, l]]);
+						vertices.Add(edgeVertices[MarchTables.triangles[cubeIndex, l + 1]]);
+						vertices.Add(edgeVertices[MarchTables.triangles[cubeIndex, l + 2]]);
+						Vector3 normal = (vertices[vertices.Count - 3] - vertices[vertices.Count - 2]).Cross(vertices[vertices.Count - 1] - vertices[vertices.Count - 2]).Normalized();
+						normals.Add(normal);
+						normals.Add(normal);
+						normals.Add(normal);
 					}
 				}
 			}
 		}
-		GenerateSurfaceData(chunk, vertices, normals);
+		////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
+		if(vertices.Count > 0)
+			GenerateMesh(chunk, vertices, normals);
 	}
 
-	void GenerateSurfaceData(Chunk chunk, List<Vector3>[] vertices, List<Vector3>[] normals)
+	void GenerateMesh(Chunk chunk, List<Vector3> vertices, List<Vector3> normals)
 	{
-		List<Vector3>[][] surfacesData = new List<Vector3>[surfaceCount][];
-		for(int i = 0; i < vertices.Length; i++)
-		{
-			if (vertices[i] == null)
-			{
-				continue;
-			}
-			if (surfacesData[i] == null)
-				surfacesData[i] = new List<Vector3>[vertices[i].Count];
-			if (surfacesData[i][0] == null)
-			{
-				surfacesData[i][0] = new List<Vector3>();
-				surfacesData[i][1] = new List<Vector3>();
-			}
-			for(int j = 0; j < vertices[i].Count; j++)
-			{
-				surfacesData[i][0].Add(vertices[i][j]);
-				surfacesData[i][1].Add(normals[i][j]);
-			}
-		}
-		GenerateMesh(chunk, surfacesData);
+		GD.Print("Generate mesh: " + vertices.Count);
+		MeshInstance3D meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = new ArrayMesh();
+		CollisionShape3D collisionShape = new CollisionShape3D();
+		collisionShape.Name = "CollisionShape";
+		StaticBody3D chunkBody = new StaticBody3D();
+		chunkBody.Name = "StaticBody";
+
+		GD.Print(chunkBody.Name + " " + collisionShape.Name);
+		chunkBody.AddChild(collisionShape);
+		meshInstance.AddChild(chunkBody);
+		chunkMeshes[chunk.index.X, chunk.index.Y, chunk.index.Z] = meshInstance;
+		CallDeferred(Node.MethodName.AddChild, meshInstance);
+		//AddChild(meshInstance);
+		//meshInstance.Owner = this;
+
+		Array arrays = new Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		(meshInstance.Mesh as ArrayMesh).AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		collisionShape.Shape = meshInstance.Mesh.CreateTrimeshShape();
+		meshInstance.Name = "Chunk " + chunk.index;
 	}
 
-	void GenerateMesh(Chunk chunk, List<Vector3>[][] surfacesData)
+	public Vector3I ChunkToIndex(Vector3 chunk)
 	{
-		for(int i = 0; i < surfacesData.Length; i++)
-		{
-			if (surfacesData[i] == null)
-			{
-				continue;
-			}
-			Array arrays = new Array();
-			arrays.Resize((int)Mesh.ArrayType.Max);
-			arrays[(int)Mesh.ArrayType.Vertex] = surfacesData[i][0].ToArray();
-			arrays[(int)Mesh.ArrayType.Normal] = surfacesData[i][1].ToArray();
-			(chunk.meshInstance.Mesh as ArrayMesh).AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		}
-		chunk.mesh = chunk.meshInstance.Mesh;
-		/*for(int i = 0; i < surfacesData.Length; i++)
-		{
-			if (surfacesData[i] == null)
-			{
-				continue;
-			}
-			StandardMaterial3D material = new StandardMaterial3D();
-			material.AlbedoColor = new Color(GD.Randf(), GD.Randf(), GD.Randf());
-
-			chunk.mesh.SurfaceSetMaterial(i, material);
-		}*/
-		GenerateCollider(chunk);
+		return new Vector3I((int)MathF.Floor((chunk.X + halfworldwidth) / (chunkSize * cubeSize)), (int)MathF.Floor((chunk.Y + halfworldwidth) / (chunkSize * cubeSize)), (int)MathF.Floor((chunk.Z + halfworldwidth) / (chunkSize * cubeSize)));
 	}
 
-	void GenerateCollider(Chunk chunk)
+	Vector3 IndexToChunk(Vector3I index)
 	{
-		chunk.collisionShape.Shape = chunk.mesh.CreateTrimeshShape();
-	}
-
-	Vector3I GetChunkIndex(Vector3 position)
-	{
-		return new Vector3I((int)MathF.Floor(position.X / chunkSize), (int)MathF.Floor(position.Y / chunkSize), (int)MathF.Floor(position.Z / chunkSize)) + lowestChunk;
-	}
-
-	Vector3I ChunkToIndex(Vector3I chunk)
-	{
-		return chunk + lowestChunk;
-	}
-
-	Vector3I IndexToChunk(Vector3I index)
-	{
-		return index - lowestChunk;
+		return new Vector3(index.X * (chunkSize * cubeSize) - halfworldwidth, index.Y * (chunkSize * cubeSize) - halfworldwidth, index.Z * (chunkSize * cubeSize) - halfworldwidth);
 	}
 
 	Vector3 VertexInterpolation(Vector3 p1, Vector3 p2, float v1, float v2)
 	{
 		//return p1 + (p2 - p1) * (surfaceValue - v1) / (v2 - v1);
-		//GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
+		////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
 		return p1.Lerp(p2, (sqrSurfaceValue - v1) / (v2 - v1));
 	}
 }
