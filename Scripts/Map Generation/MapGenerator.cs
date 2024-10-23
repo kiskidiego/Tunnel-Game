@@ -30,7 +30,7 @@ public partial class MapGenerator : Node3D
 	class Point
 	{
 		public Vector3 position;
-		public float score = -1;
+		public float score = float.MaxValue;
 		public Point(Vector3 position)
 		{
 			this.position = position;
@@ -82,13 +82,12 @@ public partial class MapGenerator : Node3D
 		chunkCurvePoints = new List<Vector3>[worldSize, worldSize, worldSize];
 		chunkMeshes = new MeshInstance3D[worldSize, worldSize, worldSize];
 		loadedChunks = new bool[worldSize, worldSize, worldSize];
-		for (int i = 0; i < chunkCurvePoints.GetLength(0); i++)
+		for (int i = 0; i < worldSize; i++)
 		{
-			for (int j = 0; j < chunkCurvePoints.GetLength(1); j++)
+			for (int j = 0; j < worldSize; j++)
 			{
-				for (int k = 0; k < chunkCurvePoints.GetLength(2); k++)
+				for (int k = 0; k < worldSize; k++)
 				{
-					Vector3I chunkIndex = new Vector3I(i, j, k);
 					chunkCurvePoints[i, j, k] = new List<Vector3>();
 				}
 			}
@@ -323,7 +322,7 @@ public partial class MapGenerator : Node3D
 			{
 				for (int k = 0; k < grid.GetLength(2); k++)
 				{
-					if (AssessScore(grid[i, j, k], chunk) == -1)
+					if (!AssessScore(grid[i, j, k], chunk))
 					{
 						return false;
 					}
@@ -334,10 +333,8 @@ public partial class MapGenerator : Node3D
 		return true;
 	}
 
-	float AssessScore(Point point, Vector3I chunk)
+	bool AssessScore(Point point, Vector3I chunk)
 	{
-		float score = float.MaxValue;
-
 		int startIndex = -Mathf.CeilToInt(surfaceValue / (chunkSize * cubeSize) + 1);
 		int endIndex = -startIndex;
 
@@ -358,25 +355,20 @@ public partial class MapGenerator : Node3D
 					for (int l = 0; l < chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k].Count; l++)
 					{
 						float sqrDistance = (point.position - chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k][l]).LengthSquared();
-						if (sqrDistance < score)
+						if (sqrDistance < point.score)
 						{
-							score = sqrDistance;
+							point.score = sqrDistance;
 						}
 					}
 				}
 			}
 		}
-		if (score < sqrSurfaceValue)
-		{
-			////GD.Print("Inside");
-		}
-		if (score == float.MaxValue)
-		{
-			score = -1;
-		}
 		//////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
-		point.score = score;
-		return score;
+		if (point.score == float.MaxValue)
+		{
+			return false;
+		}
+		return true;
 	}
 
 	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue)
