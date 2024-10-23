@@ -5,6 +5,7 @@
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_o6fe4"]
 
 [node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("camRotator")]
+motion_mode = 1
 floor_max_angle = 1.0472
 script = ExtResource("1_4pw76")
 camRotator = NodePath("Node3D")

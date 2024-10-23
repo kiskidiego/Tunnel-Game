@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 public partial class PlayerController : CharacterBody3D
 {
@@ -8,9 +9,6 @@ public partial class PlayerController : CharacterBody3D
 	[Export] const float JumpVelocity = 4.5f;
 	[Export] float cameraSensitivity = 0.01f;
 	[Export] Node3D camRotator;
-
-	// Get the gravity from the project settings to be synced with RigidBody nodes.
-	public float gravity = ProjectSettings.GetSetting("physics/3d/default_gravity").AsSingle();
 
 	public override void _Ready()
 	{
@@ -33,27 +31,22 @@ public partial class PlayerController : CharacterBody3D
 	{
 		Vector3 velocity = Velocity;
 
-		// Add the gravity.
-		if (!IsOnFloor())
-			velocity.Y -= gravity * (float)delta;
-
-		// Handle Jump.
-		if (Input.IsActionJustPressed("ui_accept") /*&& IsOnFloor()*/)
-			velocity.Y = JumpVelocity;
-
 		// Get the input direction and handle the movement/deceleration.
 		// As good practice, you should replace UI actions with custom gameplay actions.
 		Vector2 inputDir = Input.GetVector("MovementLeft", "MovementRight", "MovementForward", "MovementBackward");
-		Vector3 direction = (Transform.Basis * new Vector3(inputDir.X, 0, inputDir.Y)).Normalized();
+		Vector3 direction = (camRotator.GlobalBasis * new Vector3(inputDir.X, 0, inputDir.Y)).Normalized();
+		
 		if (direction != Vector3.Zero)
 		{
 			velocity.X = direction.X * Speed;
+			velocity.Y = direction.Y * Speed;
 			velocity.Z = direction.Z * Speed;
 		}
 		else
 		{
-			velocity.X = Mathf.MoveToward(Velocity.X, 0, Speed);
-			velocity.Z = Mathf.MoveToward(Velocity.Z, 0, Speed);
+			velocity.X = Mathf.MoveToward(velocity.X, 0, Speed);
+			velocity.Y = Mathf.MoveToward(velocity.Y, 0, Speed);
+			velocity.Z = Mathf.MoveToward(velocity.Z, 0, Speed);
 		}
 
 		Velocity = velocity;
