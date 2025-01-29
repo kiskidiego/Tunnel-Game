@@ -5,8 +5,8 @@ using System.Text.RegularExpressions;
 
 public partial class PlayerController : CharacterBody3D
 {
-	[Export] const float Speed = 5.0f;
-	[Export] const float JumpVelocity = 4.5f;
+	[Export] float Speed = 5.0f;
+	[Export] float JumpVelocity = 4.5f;
 	[Export] float cameraSensitivity = 0.01f;
 	[Export] Node3D camRotator;
 

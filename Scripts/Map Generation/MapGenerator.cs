@@ -31,9 +31,22 @@ public partial class MapGenerator : Node3D
 	{
 		public Vector3 position;
 		public float score = float.MaxValue;
+		public List<float> biomeScores = new List<float>();
 		public Point(Vector3 position)
 		{
 			this.position = position;
+		}
+	}
+	class BiomePoint
+	{
+		public Vector3 position;
+		public float range;
+		public int biomeIndex;
+		public BiomePoint(Vector3 p, float r, int i)
+		{
+			position = p;
+			range = r;
+			biomeIndex = i;
 		}
 	}
 	class Curve
@@ -54,6 +67,11 @@ public partial class MapGenerator : Node3D
 	[Export] float surfaceValue = 5;
 	[Export] int renderDistance = 5;
 	[Export] float branchiness = 0.5f;
+	[Export] Color[] biomes;
+	[Export] float biomeSizeIndex;
+	[Export] int minBiomeAmount;
+	[Export] int maxBiomeAmount;
+	List<BiomePoint> biomePoints = new List<BiomePoint>();
 	List<Vector3I> renderedChunks = new List<Vector3I>();
 	float sqrSurfaceValue;
 	Vector3I lowestChunk;
@@ -72,9 +90,26 @@ public partial class MapGenerator : Node3D
 		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
 		sqrSurfaceValue = surfaceValue * surfaceValue;
 		//////GD.Print("Lowest chunk: " + lowestChunk);
+		PrepareBiomePoints();
 		PrepareChunkGrid();
 		SampleCurves(PrepareCurves());
 		DoChunkOperations(tunnelOrigin);
+	}
+	
+	void PrepareBiomePoints()
+	{
+        if(biomes.IsEmpty())
+	        return;
+        int biomeAmount = random.RandiRange(minBiomeAmount, maxBiomeAmount);
+        for (int i = 0; i < biomeAmount; i++)
+        {
+	        float x = random.RandfRange(-worldSize / 2, worldSize / 2);
+	        float y = random.RandfRange(-worldSize / 2, worldSize / 2);
+	        float z = random.RandfRange(-worldSize / 2, worldSize / 2);
+	        float range = random.RandfRange(0, 0.999f);
+	        int index = random.RandiRange(0, 0);
+	        biomePoints.Add(new BiomePoint(new Vector3(x, y, z), range, index));
+        }
 	}
 
 	void PrepareChunkGrid()
@@ -523,5 +558,10 @@ public partial class MapGenerator : Node3D
 		//return p1 + (p2 - p1) * (surfaceValue - v1) / (v2 - v1);
 		//////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
 		return p1.Lerp(p2, (sqrSurfaceValue - v1) / (v2 - v1));
+	}
+	
+	float BiomeScore(float d, float r)
+	{
+		return -(d) * (1 - r) + biomeSizeIndex;
 	}
 }
