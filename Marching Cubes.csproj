@@ -6,4 +6,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>MarchingCubes</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="scripts\map generation\ComputeShader.glsl" />
+  </ItemGroup>
 </Project>

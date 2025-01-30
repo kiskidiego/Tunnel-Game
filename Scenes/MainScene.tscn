@@ -12,6 +12,12 @@ velocity = Vector3(0, -34.1367, 0)
 
 [node name="MapGenerator" parent="." instance=ExtResource("2_4x106")]
 tunnelOrigin = Vector3(5, 0, 5)
+branchiness = 0.1
+baseColor = Color(0.619608, 0.619608, 0.619608, 1)
+biomes = PackedColorArray(0.152302, 0.622936, 0, 1, 4.23551e-06, 0.616814, 0.873012, 1, 0.984705, 0.381677, 0, 1, 0.568521, 0.00114965, 0.712058, 1, 1, 0.596078, 0.898039, 1)
+biomeSizeIndex = 100.0
+minBiomeAmount = 20
+maxBiomeAmount = 30
 
 [node name="GameManager" type="Node" parent="." node_paths=PackedStringArray("player", "mapGenerator")]
 script = ExtResource("3_ylhoa")

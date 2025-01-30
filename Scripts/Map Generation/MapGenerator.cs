@@ -67,6 +67,7 @@ public partial class MapGenerator : Node3D
 	[Export] float surfaceValue = 5;
 	[Export] int renderDistance = 5;
 	[Export] float branchiness = 0.5f;
+	[Export] Color baseColor;
 	[Export] Color[] biomes;
 	[Export] float biomeSizeIndex;
 	[Export] int minBiomeAmount;
@@ -107,7 +108,7 @@ public partial class MapGenerator : Node3D
 	        float y = random.RandfRange(-worldSize / 2, worldSize / 2);
 	        float z = random.RandfRange(-worldSize / 2, worldSize / 2);
 	        float range = random.RandfRange(0, 0.999f);
-	        int index = random.RandiRange(0, 0);
+	        int index = random.RandiRange(0, biomes.Length - 1);
 	        biomePoints.Add(new BiomePoint(new Vector3(x, y, z), range, index));
         }
 	}
@@ -214,7 +215,11 @@ public partial class MapGenerator : Node3D
 		if (AssignScores(chunk, grid))
 		{
 			////GD.Print("if passed");
-			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue);
+			List<Vector3> vertices = new List<Vector3>();
+			List<Vector3> normals = new List<Vector3>();
+			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue, vertices, normals);
+			List<Color> vertexColors = AssignVertexBiomeColors(vertices);
+			GenerateMesh(chunk, vertices, normals, vertexColors);
 		}
 	}
 
@@ -406,11 +411,9 @@ public partial class MapGenerator : Node3D
 		return true;
 	}
 
-	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue)
+	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue, List<Vector3> vertices, List<Vector3> normals)
 	{
 		////GD.Print("Marching cubes algorithm");
-		List<Vector3> vertices = new List<Vector3>();
-		List<Vector3> normals = new List<Vector3>();
 
 		for (int i = 0; i < grid.GetLength(0) - 1; i++)
 		{
@@ -511,12 +514,30 @@ public partial class MapGenerator : Node3D
 			}
 		}
 		//////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
-		if(vertices.Count > 0)
-			GenerateMesh(chunk, vertices, normals);
 	}
 
-	void GenerateMesh(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals)
+	List<Color> AssignVertexBiomeColors(List<Vector3> vertices)
 	{
+		List<Color> vertexBiomeColors = new List<Color>();
+		for (int i = 0; i < vertices.Count; i++)
+		{
+			Color vertexBiomeColor = baseColor;
+			for (int j = 0; j < biomePoints.Count; j++)
+			{
+				float distance = (vertices[i] - biomePoints[j].position).LengthSquared();
+				vertexBiomeColor = vertexBiomeColor.Lerp(biomes[biomePoints[j].biomeIndex], Math.Max(0, BiomeScore(distance, biomePoints[j].range)));
+			}
+			vertexBiomeColors.Add(vertexBiomeColor);
+		}
+		return vertexBiomeColors;
+	}
+
+	void GenerateMesh(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals, List<Color> vertexColors)
+	{
+		if(vertices.Count == 0)
+		{
+			return;
+		}
 		//GD.Print("Generate mesh: " + vertices.Count);
 		MeshInstance3D meshInstance = new MeshInstance3D();
 		meshInstance.Mesh = new ArrayMesh();
@@ -533,11 +554,17 @@ public partial class MapGenerator : Node3D
 		//AddChild(meshInstance);
 		//meshInstance.Owner = this;
 
+
 		Array arrays = new Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
 		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
 		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.Color] = vertexColors.ToArray();
 		(meshInstance.Mesh as ArrayMesh).AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		meshInstance.Mesh.SurfaceSetMaterial(0, new StandardMaterial3D());
+
+		(meshInstance.Mesh.SurfaceGetMaterial(0) as StandardMaterial3D).VertexColorUseAsAlbedo = true;
 
 		collisionShape.Shape = meshInstance.Mesh.CreateTrimeshShape();
 		meshInstance.Name = "Chunk " + chunk;
@@ -562,6 +589,6 @@ public partial class MapGenerator : Node3D
 	
 	float BiomeScore(float d, float r)
 	{
-		return -(d) * (1 - r) + biomeSizeIndex;
+		return (-(d) * (1 - r) + biomeSizeIndex)/biomeSizeIndex;
 	}
 }
