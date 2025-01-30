@@ -107,9 +107,10 @@ public partial class MapGenerator : Node3D
 	        float x = random.RandfRange(-worldSize / 2, worldSize / 2);
 	        float y = random.RandfRange(-worldSize / 2, worldSize / 2);
 	        float z = random.RandfRange(-worldSize / 2, worldSize / 2);
-	        float range = random.RandfRange(0, 0.999f);
+	        float range = random.RandfRange(0.7f, 0.999f);
 	        int index = random.RandiRange(0, biomes.Length - 1);
 	        biomePoints.Add(new BiomePoint(new Vector3(x, y, z), range, index));
+	        GD.Print("Biome Point location: " + new Vector3(x, y, z));
         }
 	}
 
