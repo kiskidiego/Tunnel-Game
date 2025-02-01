@@ -9,19 +9,20 @@
 [node name="CharacterBody3D" parent="." instance=ExtResource("1_0n36k")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 5)
 velocity = Vector3(0, -34.1367, 0)
+Speed = 15.0
 
 [node name="MapGenerator" parent="." instance=ExtResource("2_4x106")]
-worldSize = 500
+worldSize = 250
 tunnelOrigin = Vector3(5, 0, 5)
 tunnelRange = 30.0
-tunnelAmount = 250
+tunnelAmount = 125
 curveSamples = 25
 branchiness = 0.1
-baseColor = Color(0.435192, 0.435192, 0.435192, 1)
-biomes = PackedColorArray(0.152302, 0.622936, 0, 1, 4.23551e-06, 0.616814, 0.873012, 1, 0.984705, 0.381677, 0, 1, 0.449453, 0.000690195, 0.565579, 1, 0.999999, 0.42272, 0.873651, 1, 0.179442, 6.43027e-05, 0.624823, 1)
+baseColor = Color(0.617134, 0.364912, 0.152669, 1)
+biomes = PackedColorArray(1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1)
 biomeSizeIndex = 50.0
-minBiomeAmount = 50
-maxBiomeAmount = 100
+minBiomeAmount = 75
+maxBiomeAmount = 125
 
 [node name="GameManager" type="Node" parent="." node_paths=PackedStringArray("player", "mapGenerator")]
 script = ExtResource("3_ylhoa")

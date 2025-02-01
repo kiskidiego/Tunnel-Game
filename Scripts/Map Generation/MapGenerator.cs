@@ -90,7 +90,7 @@ public partial class MapGenerator : Node3D
 		random = new Random(seed);
 		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
 		sqrSurfaceValue = surfaceValue * surfaceValue;
-		//////GD.Print("Lowest chunk: " + lowestChunk);
+		////////GD.Print("Lowest chunk: " + lowestChunk);
 		PrepareBiomePoints();
 		PrepareChunkGrid();
 		SampleCurves(PrepareCurves());
@@ -110,7 +110,7 @@ public partial class MapGenerator : Node3D
 	        float range = random.RandfRange(0.7f, 0.999f);
 	        int index = random.RandiRange(0, biomes.Length - 1);
 	        biomePoints.Add(new BiomePoint(new Vector3(x, y, z), range, index));
-	        GD.Print("Biome Point location: " + new Vector3(x, y, z));
+	        //GD.Print("Biome Point location: " + new Vector3(x, y, z));
         }
 	}
 
@@ -134,7 +134,7 @@ public partial class MapGenerator : Node3D
 	public void DoChunkOperations(Vector3 worldPosition)
 	{
 		Vector3I chunkIndex = ChunkToIndex(worldPosition);
-		//GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
+		////GD.Print("Chunk index: " + chunkIndex + " World Position: " + worldPosition);
 
 		foreach(Vector3I chunk in renderedChunks)
 		{
@@ -161,7 +161,7 @@ public partial class MapGenerator : Node3D
 					{
 						continue;
 					}
-					//GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
+					////GD.Print("Rendering X: " + x + " Y: " + y + " Z: " + z);
 					ProcessChunk(currentChunkIndex);
 					renderedChunks.Add(currentChunkIndex);
 				}
@@ -212,13 +212,15 @@ public partial class MapGenerator : Node3D
 	{
 		loadedChunks[chunk.X, chunk.Y, chunk.Z] = true;
 		Point[,,] grid = PrepareGrid(chunk);
-		////GD.Print("Grid prepared: " + grid.Length);
+		//////GD.Print("Grid prepared: " + grid.Length);
 		if (AssignScores(chunk, grid))
 		{
-			////GD.Print("if passed");
+			//////GD.Print("if passed");
 			List<Vector3> vertices = new List<Vector3>();
 			List<Vector3> normals = new List<Vector3>();
 			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue, vertices, normals);
+			//InterpolateNormals(vertices, normals);
+			//DebugNormals(vertices, normals);
 			List<Color> vertexColors = AssignVertexBiomeColors(vertices);
 			GenerateMesh(chunk, vertices, normals, vertexColors);
 		}
@@ -306,7 +308,7 @@ public partial class MapGenerator : Node3D
 			curves[i].controlPoint = new Vector3(x, y, z);
 			tunnelBranchPoints.Enqueue(curves[i].endPoint);
 		}
-		//////GD.Print("Curves prepared");
+		////////GD.Print("Curves prepared");
 		return curves;
 	}
 
@@ -322,7 +324,7 @@ public partial class MapGenerator : Node3D
 				Vector3 q1 = curves[curve].controlPoint.Lerp(curves[curve].endPoint, t);
 				Vector3 point = q0.Lerp(q1, t);
 				Vector3I chunk = ChunkToIndex(point);
-				////////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
+				//////////GD.Print("Curve: " + curve + " Point: " + point + " Chunk: " + chunk);
 
 				if (chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] == null)
 				{
@@ -331,15 +333,15 @@ public partial class MapGenerator : Node3D
 				chunkCurvePoints[chunk.X, chunk.Y, chunk.Z].Add(q0.Lerp(q1, t));
 			}
 		}
-		//////GD.Print("Curves sampled");
+		////////GD.Print("Curves sampled");
 	}
 
 	Point[,,] PrepareGrid(Vector3I chunk)
 	{
-		////GD.Print("Prepare grid");
+		//////GD.Print("Prepare grid");
 		Point[,,] grid = new Point[chunkSize + 1, chunkSize + 1, chunkSize + 1];
 		Vector3 worldPosition = IndexToChunk(chunk);
-		////GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
+		//////GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
 		for (int i = 0; i < grid.GetLength(0); i++)
 		{
 			for (int j = 0; j < grid.GetLength(1); j++)
@@ -350,13 +352,13 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		////GD.Print("Grid prepared at chunk: " + chunk.index);
+		//////GD.Print("Grid prepared at chunk: " + chunk.index);
 		return grid;
 	}
 	
 	bool AssignScores(Vector3I chunk, Point[,,] grid)
 	{
-		////GD.Print("Assign scores");
+		//////GD.Print("Assign scores");
 		for (int i = 0; i < grid.GetLength(0); i++)
 		{
 			for (int j = 0; j <	grid.GetLength(1); j++)
@@ -370,7 +372,7 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		////GD.Print("Scores assigned at chunk: " + chunk.index);
+		//////GD.Print("Scores assigned at chunk: " + chunk.index);
 		return true;
 	}
 
@@ -404,7 +406,7 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		//////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
+		////////GD.Print("Chunk: " + chunk.index + " Point: " + point.position + " Score: " + score);
 		if (point.score == float.MaxValue)
 		{
 			return false;
@@ -414,7 +416,7 @@ public partial class MapGenerator : Node3D
 
 	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue, List<Vector3> vertices, List<Vector3> normals)
 	{
-		////GD.Print("Marching cubes algorithm");
+		//////GD.Print("Marching cubes algorithm");
 
 		for (int i = 0; i < grid.GetLength(0) - 1; i++)
 		{
@@ -443,7 +445,7 @@ public partial class MapGenerator : Node3D
 					if (cubeIndex == 0 || cubeIndex == 255) 
 						continue;
 
-					//////GD.Print("Cube index: " + cubeIndex);
+					////////GD.Print("Cube index: " + cubeIndex);
 					
 					if (vertices == null)
 					{
@@ -514,7 +516,43 @@ public partial class MapGenerator : Node3D
 				}
 			}
 		}
-		//////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
+		////////GD.Print("Marching cubes algorithm done at chunk: " + chunk.index + vertices[0][0]);
+	}
+
+	void InterpolateNormals(List<Vector3> vertices, List<Vector3> normals)
+	{
+		Dictionary<Vector3, Vector3> normalDictionary = new Dictionary<Vector3, Vector3>();
+		for (int i = 0; i < vertices.Count; i++)
+		{
+			if (normalDictionary.ContainsKey(vertices[i]))
+			{
+				normalDictionary[vertices[i]] = normalDictionary[vertices[i]] + normals[i];
+			}
+			else
+			{
+				normalDictionary[vertices[i]] = normals[i];
+			}
+		}
+		for(int i = 0; i < normals.Count; i++)
+		{
+			normals[i] = normalDictionary[vertices[i]].Normalized();
+		}
+	}
+
+	void DebugNormals(List<Vector3> vertices, List<Vector3> normals)
+	{
+		for (int i = 0; i < vertices.Count; i++)
+		{
+			MeshInstance3D meshInstance = new MeshInstance3D();
+			meshInstance.Mesh = new ImmediateMesh();
+			ImmediateMesh mesh = meshInstance.Mesh as ImmediateMesh;
+			mesh.SurfaceBegin(Mesh.PrimitiveType.Lines, new StandardMaterial3D());
+			mesh.SurfaceAddVertex(vertices[i]);
+			mesh.SurfaceAddVertex(vertices[i] + normals[i]);
+			mesh.SurfaceEnd();
+			(mesh.SurfaceGetMaterial(0) as StandardMaterial3D).AlbedoColor = new Color(1, 0, 0);
+			AddChild(meshInstance);
+		}
 	}
 
 	List<Color> AssignVertexBiomeColors(List<Vector3> vertices)
@@ -539,7 +577,7 @@ public partial class MapGenerator : Node3D
 		{
 			return;
 		}
-		//GD.Print("Generate mesh: " + vertices.Count);
+		////GD.Print("Generate mesh: " + vertices.Count);
 		MeshInstance3D meshInstance = new MeshInstance3D();
 		meshInstance.Mesh = new ArrayMesh();
 		CollisionShape3D collisionShape = new CollisionShape3D();
@@ -547,7 +585,7 @@ public partial class MapGenerator : Node3D
 		StaticBody3D chunkBody = new StaticBody3D();
 		chunkBody.Name = "StaticBody";
 
-		//GD.Print(chunkBody.Name + " " + collisionShape.Name);
+		////GD.Print(chunkBody.Name + " " + collisionShape.Name);
 		chunkBody.AddChild(collisionShape);
 		meshInstance.AddChild(chunkBody);
 		chunkMeshes[chunk.X, chunk.Y, chunk.Z] = meshInstance;
@@ -584,7 +622,7 @@ public partial class MapGenerator : Node3D
 	Vector3 VertexInterpolation(Vector3 p1, Vector3 p2, float v1, float v2)
 	{
 		//return p1 + (p2 - p1) * (surfaceValue - v1) / (v2 - v1);
-		//////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
+		////////GD.Print("Positions: " + p1 + " " + p2 + " Values: "+ v1 + " " + v2 + " Interpolation: " + (surfaceValue - v1) / (v2 - v1));
 		return p1.Lerp(p2, (sqrSurfaceValue - v1) / (v2 - v1));
 	}
 	
