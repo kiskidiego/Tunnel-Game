@@ -13,6 +13,7 @@ Speed = 15.0
 
 [node name="MapGenerator" parent="." instance=ExtResource("2_4x106")]
 worldSize = 250
+cubeSize = 1.5
 tunnelOrigin = Vector3(5, 0, 5)
 tunnelRange = 30.0
 tunnelAmount = 125

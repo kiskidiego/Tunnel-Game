@@ -219,7 +219,8 @@ public partial class MapGenerator : Node3D
 			List<Vector3> vertices = new List<Vector3>();
 			List<Vector3> normals = new List<Vector3>();
 			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue, vertices, normals);
-			//InterpolateNormals(vertices, normals);
+			InterpolateNormals(vertices, normals);
+			RemoveExcess(chunk, vertices, normals);
 			//DebugNormals(vertices, normals);
 			List<Color> vertexColors = AssignVertexBiomeColors(vertices);
 			GenerateMesh(chunk, vertices, normals, vertexColors);
@@ -339,7 +340,7 @@ public partial class MapGenerator : Node3D
 	Point[,,] PrepareGrid(Vector3I chunk)
 	{
 		//////GD.Print("Prepare grid");
-		Point[,,] grid = new Point[chunkSize + 1, chunkSize + 1, chunkSize + 1];
+		Point[,,] grid = new Point[chunkSize + 3, chunkSize + 3, chunkSize + 3];
 		Vector3 worldPosition = IndexToChunk(chunk);
 		//////GD.Print(grid.GetLength(0) + " " + grid.GetLength(1) + " " + grid.GetLength(2));
 		for (int i = 0; i < grid.GetLength(0); i++)
@@ -348,7 +349,7 @@ public partial class MapGenerator : Node3D
 			{
 				for (int k = 0; k < grid.GetLength(2); k++)
 				{
-					grid[i, j, k] = new Point(new Vector3(worldPosition.X + i * cubeSize, worldPosition.Y + j * cubeSize, worldPosition.Z + k * cubeSize));
+					grid[i, j, k] = new Point(new Vector3(worldPosition.X + (i-1) * cubeSize, worldPosition.Y + (j-1) * cubeSize, worldPosition.Z + (k - 1) * cubeSize));
 				}
 			}
 		}
@@ -536,6 +537,28 @@ public partial class MapGenerator : Node3D
 		for(int i = 0; i < normals.Count; i++)
 		{
 			normals[i] = normalDictionary[vertices[i]].Normalized();
+		}
+	}
+
+	private void RemoveExcess(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals)
+	{
+		Vector3 chunkBorder = IndexToChunk(chunk);
+		for (int i = 0; i < vertices.Count; i += 3)
+		{
+			for (int j = i; j < i + 3; j++)
+			{
+				if (vertices[j].X < chunkBorder.X || vertices[j].X > chunkBorder.X + chunkSize * cubeSize || vertices[j].Y < chunkBorder.Y || vertices[j].Y > chunkBorder.Y + chunkSize * cubeSize || vertices[j].Z < chunkBorder.Z || vertices[j].Z > chunkBorder.Z + chunkSize * cubeSize)
+				{
+					vertices.RemoveAt(i);
+					normals.RemoveAt(i);
+					vertices.RemoveAt(i);
+					normals.RemoveAt(i);
+					vertices.RemoveAt(i);
+					normals.RemoveAt(i);
+					i -= 3;
+					break;
+				}
+			}
 		}
 	}
 
