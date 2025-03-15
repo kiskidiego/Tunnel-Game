@@ -1,8 +1,11 @@
-[gd_scene load_steps=4 format=3 uid="uid://dmsdal876nc83"]
+[gd_scene load_steps=5 format=3 uid="uid://dmsdal876nc83"]
 
 [ext_resource type="PackedScene" uid="uid://cpftmf8co67m3" path="res://Scenes/Player.tscn" id="1_0n36k"]
 [ext_resource type="PackedScene" uid="uid://vnx8extkyqc5" path="res://Scenes/MapGenerator.tscn" id="2_4x106"]
 [ext_resource type="Script" path="res://Scripts/GameManager.cs" id="3_ylhoa"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_gm18j"]
+frequency = 0.101
 
 [node name="MainScene" type="Node3D"]
 
@@ -18,12 +21,10 @@ tunnelOrigin = Vector3(5, 0, 5)
 tunnelRange = 30.0
 tunnelAmount = 125
 curveSamples = 25
+minRadius = 0.0
 branchiness = 0.1
-baseColor = Color(0.617134, 0.364912, 0.152669, 1)
-biomes = PackedColorArray(1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1)
-biomeSizeIndex = 50.0
-minBiomeAmount = 75
-maxBiomeAmount = 125
+heightNoiseIntensity = 50.0
+heightNoise = SubResource("FastNoiseLite_gm18j")
 
 [node name="GameManager" type="Node" parent="." node_paths=PackedStringArray("player", "mapGenerator")]
 script = ExtResource("3_ylhoa")

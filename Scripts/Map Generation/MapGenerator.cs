@@ -31,29 +31,28 @@ public partial class MapGenerator : Node3D
 	{
 		public Vector3 position;
 		public float score = float.MaxValue;
-		public List<float> biomeScores = new List<float>();
 		public Point(Vector3 position)
 		{
 			this.position = position;
 		}
 	}
-	class BiomePoint
-	{
-		public Vector3 position;
-		public float range;
-		public int biomeIndex;
-		public BiomePoint(Vector3 p, float r, int i)
-		{
-			position = p;
-			range = r;
-			biomeIndex = i;
-		}
-	}
 	class Curve
 	{
+		public float startRadius;
 		public Vector3 startPoint;
 		public Vector3 endPoint;
 		public Vector3 controlPoint;
+		public float endRadius;
+	}
+	class CurvePoint
+	{
+		public Vector3 position;
+		public float radius;
+		public CurvePoint(Vector3 position, float radius)
+		{
+			this.position = position;
+			this.radius = radius;
+		}
 	}
 
 	[Export] ulong seed = 0;
@@ -64,19 +63,18 @@ public partial class MapGenerator : Node3D
 	[Export] float tunnelRange = 10;
 	[Export] int tunnelAmount = 10;
 	[Export] int curveSamples = 10;
-	[Export] float surfaceValue = 5;
+	[Export] float surfaceValue = 3;
+	[Export] float minRadius = 5;
+	[Export] float maxRadius = 10;
 	[Export] int renderDistance = 5;
 	[Export] float branchiness = 0.5f;
-	[Export] Color baseColor;
-	[Export] Color[] biomes;
-	[Export] float biomeSizeIndex;
-	[Export] int minBiomeAmount;
-	[Export] int maxBiomeAmount;
-	List<BiomePoint> biomePoints = new List<BiomePoint>();
-	List<Vector3I> renderedChunks = new List<Vector3I>();
+	[Export] bool interpolateNormals = true;
+	[Export] float heightNoiseIntensity = 20;
+	[Export] Noise heightNoise;
 	float sqrSurfaceValue;
+	List<Vector3I> renderedChunks = new List<Vector3I>();
 	Vector3I lowestChunk;
-	List<Vector3>[,,] chunkCurvePoints;
+	List<CurvePoint>[,,] chunkCurvePoints;
 	bool[,,] loadedChunks;
 	MeshInstance3D[,,] chunkMeshes;
 	Random random;
@@ -87,36 +85,18 @@ public partial class MapGenerator : Node3D
 		{
 			seed = (ulong)DateTime.Now.Ticks;
 		}
+		sqrSurfaceValue = surfaceValue * surfaceValue;
 		random = new Random(seed);
 		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
-		sqrSurfaceValue = surfaceValue * surfaceValue;
 		////////GD.Print("Lowest chunk: " + lowestChunk);
-		PrepareBiomePoints();
 		PrepareChunkGrid();
 		SampleCurves(PrepareCurves());
 		DoChunkOperations(tunnelOrigin);
 	}
 	
-	void PrepareBiomePoints()
-	{
-        if(biomes.IsEmpty())
-	        return;
-        int biomeAmount = random.RandiRange(minBiomeAmount, maxBiomeAmount);
-        for (int i = 0; i < biomeAmount; i++)
-        {
-	        float x = random.RandfRange(-worldSize / 2, worldSize / 2);
-	        float y = random.RandfRange(-worldSize / 2, worldSize / 2);
-	        float z = random.RandfRange(-worldSize / 2, worldSize / 2);
-	        float range = random.RandfRange(0.7f, 0.999f);
-	        int index = random.RandiRange(0, biomes.Length - 1);
-	        biomePoints.Add(new BiomePoint(new Vector3(x, y, z), range, index));
-	        //GD.Print("Biome Point location: " + new Vector3(x, y, z));
-        }
-	}
-
 	void PrepareChunkGrid()
 	{
-		chunkCurvePoints = new List<Vector3>[worldSize, worldSize, worldSize];
+		chunkCurvePoints = new List<CurvePoint>[worldSize, worldSize, worldSize];
 		chunkMeshes = new MeshInstance3D[worldSize, worldSize, worldSize];
 		loadedChunks = new bool[worldSize, worldSize, worldSize];
 		for (int i = 0; i < worldSize; i++)
@@ -125,7 +105,7 @@ public partial class MapGenerator : Node3D
 			{
 				for (int k = 0; k < worldSize; k++)
 				{
-					chunkCurvePoints[i, j, k] = new List<Vector3>();
+					chunkCurvePoints[i, j, k] = new List<CurvePoint>();
 				}
 			}
 		}
@@ -219,11 +199,11 @@ public partial class MapGenerator : Node3D
 			List<Vector3> vertices = new List<Vector3>();
 			List<Vector3> normals = new List<Vector3>();
 			MarchingCubesAlgorithm(chunk, grid, sqrSurfaceValue, vertices, normals);
-			InterpolateNormals(vertices, normals);
+			if (interpolateNormals)
+				InterpolateNormals(vertices, normals);
 			RemoveExcess(chunk, vertices, normals);
 			//DebugNormals(vertices, normals);
-			List<Color> vertexColors = AssignVertexBiomeColors(vertices);
-			GenerateMesh(chunk, vertices, normals, vertexColors);
+			GenerateMesh(chunk, vertices, normals);
 		}
 	}
 
@@ -231,9 +211,12 @@ public partial class MapGenerator : Node3D
 	{
 		float worldWidth = worldSize * chunkSize * cubeSize;
 		Queue<Vector3> tunnelBranchPoints = new Queue<Vector3>();
+		Queue<float> tunnelSurfaceValues = new Queue<float>();
 		Curve[] curves = new Curve[tunnelAmount];
 		curves[0] = new Curve();
 		curves[0].startPoint = tunnelOrigin;
+		curves[0].startRadius = random.RandfRange(minRadius, maxRadius);
+		curves[0].endRadius = random.RandfRange(minRadius, maxRadius);
 
 		float x;
 		do
@@ -269,6 +252,7 @@ public partial class MapGenerator : Node3D
 		curves[0].controlPoint = new Vector3(x, y, z);
 
 		tunnelBranchPoints.Enqueue(curves[0].endPoint);
+		tunnelSurfaceValues.Enqueue(curves[0].endRadius);
 
 
 		for (int i = 1; i < curves.Length; i++)
@@ -277,9 +261,12 @@ public partial class MapGenerator : Node3D
 			{
 				Vector3 branchPoint = tunnelBranchPoints.Dequeue();
 				tunnelBranchPoints.Enqueue(branchPoint);
+				float branchSurfaceValue = tunnelSurfaceValues.Dequeue();
+				tunnelSurfaceValues.Enqueue(branchSurfaceValue);
 			}
 			curves[i] = new Curve();
 			curves[i].startPoint = tunnelBranchPoints.Dequeue();
+			curves[i].startRadius = tunnelSurfaceValues.Dequeue();
 			do
 			{
 				x = random.RandfRange(-tunnelRange + curves[i].startPoint.X, tunnelRange + curves[i].startPoint.X);
@@ -297,7 +284,7 @@ public partial class MapGenerator : Node3D
 			do
 			{
 				x = random.RandfRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
-			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
+			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue	 || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
 				y = random.RandfRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);
@@ -307,7 +294,9 @@ public partial class MapGenerator : Node3D
 				z = random.RandfRange(-tunnelRange + midpoint.Z, tunnelRange + midpoint.Z);
 			} while (z > worldWidth / 2 - 2 * sqrSurfaceValue || z < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			curves[i].controlPoint = new Vector3(x, y, z);
+			curves[i].endRadius = random.RandfRange(minRadius, maxRadius);
 			tunnelBranchPoints.Enqueue(curves[i].endPoint);
+			tunnelSurfaceValues.Enqueue(curves[i].endRadius);
 		}
 		////////GD.Print("Curves prepared");
 		return curves;
@@ -319,7 +308,7 @@ public partial class MapGenerator : Node3D
 		{
 			for (short i = 0; i < curveSamples; i++)
 			{
-
+				float radius = Mathf.Lerp(curves[curve].startRadius, curves[curve].endRadius, (float)i / curveSamples);
 				float t = (float)i / curveSamples;
 				Vector3 q0 = curves[curve].startPoint.Lerp(curves[curve].controlPoint, t);
 				Vector3 q1 = curves[curve].controlPoint.Lerp(curves[curve].endPoint, t);
@@ -329,9 +318,9 @@ public partial class MapGenerator : Node3D
 
 				if (chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] == null)
 				{
-					chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] = new List<Vector3>();
+					chunkCurvePoints[chunk.X, chunk.Y, chunk.Z] = new List<CurvePoint>();
 				}
-				chunkCurvePoints[chunk.X, chunk.Y, chunk.Z].Add(q0.Lerp(q1, t));
+				chunkCurvePoints[chunk.X, chunk.Y, chunk.Z].Add(new CurvePoint(q0.Lerp(q1, t), radius));
 			}
 		}
 		////////GD.Print("Curves sampled");
@@ -398,10 +387,13 @@ public partial class MapGenerator : Node3D
 					}
 					for (int l = 0; l < chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k].Count; l++)
 					{
-						float sqrDistance = (point.position - chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k][l]).LengthSquared();
-						if (sqrDistance < point.score)
+						float sqrDistance = (point.position - chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k][l].position).LengthSquared();
+						float modifiedDistance = sqrDistance - chunkCurvePoints[chunk.X + i, chunk.Y + j, chunk.Z + k][l].radius;
+						modifiedDistance += heightNoise.GetNoise3D(point.position.X, point.position.Y, point.position.Z) * heightNoiseIntensity;
+						modifiedDistance = Math.Min(modifiedDistance, sqrDistance);
+						if (modifiedDistance < point.score)
 						{
-							point.score = sqrDistance;
+							point.score = modifiedDistance;
 						}
 					}
 				}
@@ -418,7 +410,6 @@ public partial class MapGenerator : Node3D
 	void MarchingCubesAlgorithm(Vector3I chunk, Point[,,] grid, float surfaceValue, List<Vector3> vertices, List<Vector3> normals)
 	{
 		//////GD.Print("Marching cubes algorithm");
-
 		for (int i = 0; i < grid.GetLength(0) - 1; i++)
 		{
 			for (int j = 0; j < grid.GetLength(1) - 1; j++)
@@ -578,23 +569,7 @@ public partial class MapGenerator : Node3D
 		}
 	}
 
-	List<Color> AssignVertexBiomeColors(List<Vector3> vertices)
-	{
-		List<Color> vertexBiomeColors = new List<Color>();
-		for (int i = 0; i < vertices.Count; i++)
-		{
-			Color vertexBiomeColor = baseColor;
-			for (int j = 0; j < biomePoints.Count; j++)
-			{
-				float distance = (vertices[i] - biomePoints[j].position).LengthSquared();
-				vertexBiomeColor = vertexBiomeColor.Lerp(biomes[biomePoints[j].biomeIndex], Math.Max(0, BiomeScore(distance, biomePoints[j].range)));
-			}
-			vertexBiomeColors.Add(vertexBiomeColor);
-		}
-		return vertexBiomeColors;
-	}
-
-	void GenerateMesh(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals, List<Color> vertexColors)
+	void GenerateMesh(Vector3I chunk, List<Vector3> vertices, List<Vector3> normals)
 	{
 		if(vertices.Count == 0)
 		{
@@ -621,7 +596,6 @@ public partial class MapGenerator : Node3D
 		arrays.Resize((int)Mesh.ArrayType.Max);
 		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
 		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
-		arrays[(int)Mesh.ArrayType.Color] = vertexColors.ToArray();
 		(meshInstance.Mesh as ArrayMesh).AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
 		meshInstance.Mesh.SurfaceSetMaterial(0, new StandardMaterial3D());
@@ -649,8 +623,5 @@ public partial class MapGenerator : Node3D
 		return p1.Lerp(p2, (sqrSurfaceValue - v1) / (v2 - v1));
 	}
 	
-	float BiomeScore(float d, float r)
-	{
-		return (-(d) * (1 - r) + biomeSizeIndex)/biomeSizeIndex;
-	}
 }
+
