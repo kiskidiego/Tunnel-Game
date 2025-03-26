@@ -55,6 +55,7 @@ public partial class MapGenerator : Node3D
 		}
 	}
 
+	[Export] string name;
 	[Export] ulong seed = 0;
 	[Export] int worldSize = 100;
 	[Export] public int chunkSize { get; private set; } = 10;
@@ -89,11 +90,42 @@ public partial class MapGenerator : Node3D
 		random = new Random(seed);
 		halfworldwidth = worldSize * chunkSize * cubeSize / 2;
 		////////GD.Print("Lowest chunk: " + lowestChunk);
+		SaveMapParameters();
 		PrepareChunkGrid();
 		SampleCurves(PrepareCurves());
+		SaveCurves();
 		DoChunkOperations(tunnelOrigin);
 	}
-	
+
+	private void SaveMapParameters()
+	{
+		MapSaveSystem.CreateMap(name, new Vector3I(worldSize, worldSize, worldSize));
+	}
+
+	private void SaveCurves()
+	{
+		for (int i = 0; i < chunkCurvePoints.GetLength(0); i++)
+		{
+			for (int j = 0; j < chunkCurvePoints.GetLength(1); j++)
+			{
+				for (int k = 0; k < chunkCurvePoints.GetLength(2); k++)
+				{
+					if (chunkCurvePoints[i, j, k].Count > 0)
+					{
+						MapCurvePoint[] curvePoints = new MapCurvePoint[chunkCurvePoints[i, j, k].Count];
+						for (int l = 0; l < chunkCurvePoints[i, j, k].Count; l++)
+						{
+							curvePoints[l] = new MapCurvePoint();
+							curvePoints[l].position = chunkCurvePoints[i, j, k][l].position;
+							curvePoints[l].radius = chunkCurvePoints[i, j, k][l].radius;
+						}
+						MapSaveSystem.AddCurvePoints(new Vector3I(i, j, k), curvePoints);
+					}
+				}
+			}
+		}
+	}
+
 	void PrepareChunkGrid()
 	{
 		chunkCurvePoints = new List<CurvePoint>[worldSize, worldSize, worldSize];
@@ -195,6 +227,7 @@ public partial class MapGenerator : Node3D
 		//////GD.Print("Grid prepared: " + grid.Length);
 		if (AssignScores(chunk, grid))
 		{
+			SaveGridChunk(chunk, grid);
 			//////GD.Print("if passed");
 			List<Vector3> vertices = new List<Vector3>();
 			List<Vector3> normals = new List<Vector3>();
@@ -205,6 +238,23 @@ public partial class MapGenerator : Node3D
 			//DebugNormals(vertices, normals);
 			GenerateMesh(chunk, vertices, normals);
 		}
+	}
+
+	private void SaveGridChunk(Vector3I chunk, Point[,,] grid)
+	{
+		MapNode[,,] nodes = new MapNode[chunkSize + 3, chunkSize + 3, chunkSize + 3];
+		for (int i = 0; i < grid.GetLength(0); i++)
+		{
+			for (int j = 0; j < grid.GetLength(1); j++)
+			{
+				for (int k = 0; k < grid.GetLength(2); k++)
+				{
+					nodes[i, j, k].position = grid[i, j, k].position;
+					nodes[i, j, k].score = grid[i, j, k].score;
+				}
+			}
+		}
+		//MapSaveSystem.AddNodes(chunk, nodes);
 	}
 
 	Curve[] PrepareCurves()
@@ -226,7 +276,7 @@ public partial class MapGenerator : Node3D
 		float y;
 		do
 		{
-			y = random.RandfRange(-tunnelRange, tunnelRange/4);
+			y = random.RandfRange(-tunnelRange, tunnelRange / 4);
 		} while (y > worldWidth / 2 - 2 * sqrSurfaceValue || y < -worldWidth / 2 + 2 * sqrSurfaceValue);
 		float z;
 		do
@@ -284,7 +334,7 @@ public partial class MapGenerator : Node3D
 			do
 			{
 				x = random.RandfRange(-tunnelRange + midpoint.X, tunnelRange + midpoint.X);
-			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue	 || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
+			} while (x > worldWidth / 2 - 2 * sqrSurfaceValue || x < -worldWidth / 2 + 2 * sqrSurfaceValue);
 			do
 			{
 				y = random.RandfRange(-tunnelRange + midpoint.Y, tunnelRange + midpoint.Y);

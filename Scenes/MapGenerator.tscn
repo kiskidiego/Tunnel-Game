@@ -8,6 +8,5 @@ chunkSize = 5
 cubeSize = 2.0
 tunnelRange = 15.0
 tunnelAmount = 100
-surfaceValue = 3.0
 renderDistance = 2
 branchiness = 0.35

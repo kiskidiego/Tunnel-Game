@@ -27,6 +27,13 @@ public partial class PlayerController : CharacterBody3D
 
 		}
 	}
+	public override void _Process(double delta)
+	{
+		if (Input.IsKeyPressed(Key.F5))
+		{
+			MapSaveSystem.SaveMap();
+		}
+	}
 	public override void _PhysicsProcess(double delta)
 	{
 		Vector3 velocity = Velocity;

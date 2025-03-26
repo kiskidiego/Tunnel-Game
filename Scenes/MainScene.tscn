@@ -15,6 +15,7 @@ velocity = Vector3(0, -34.1367, 0)
 Speed = 15.0
 
 [node name="MapGenerator" parent="." instance=ExtResource("2_4x106")]
+name = "Test"
 worldSize = 250
 cubeSize = 1.5
 tunnelOrigin = Vector3(5, 0, 5)
